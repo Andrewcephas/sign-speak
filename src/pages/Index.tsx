@@ -2,11 +2,14 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useCamera } from '@/hooks/useCamera';
 import { useHandTracking } from '@/hooks/useHandTracking';
 import { useSpeech } from '@/hooks/useSpeech';
+import { useRecording } from '@/hooks/useRecording';
+import { useDemoModel } from '@/hooks/useDemoModel';
 import { CameraView } from '@/components/CameraView';
 import { PredictionCard } from '@/components/PredictionCard';
 import { TranscriptPanel, TranscriptEntry } from '@/components/TranscriptPanel';
 import { ControlPanel } from '@/components/ControlPanel';
 import { SettingsPanel } from '@/components/SettingsPanel';
+import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { Hand } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -34,49 +37,37 @@ const Index = () => {
   const [canvasElement, setCanvasElement] = useState<HTMLCanvasElement | null>(null);
   const { detectedHands } = useHandTracking(videoRef.current, canvasElement, isStreaming);
 
-  const [currentPrediction, setCurrentPrediction] = useState<string | null>(null);
-  const [currentConfidence, setCurrentConfidence] = useState<number>(0);
+  const {
+    isRecording,
+    hasRecording,
+    startRecording,
+    stopRecording,
+    downloadRecording,
+  } = useRecording();
+
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Mock prediction system (replace with actual model inference)
+  // Use demo model for predictions
+  const demoPrediction = useDemoModel(isStreaming, detectedHands.length > 0);
+
+  // Auto-speak predictions and add to transcript
   useEffect(() => {
-    if (detectedHands.length > 0 && isStreaming) {
-      // This is a mock - replace with actual model inference
-      const mockSigns = ['Hello', 'Thank You', 'Yes', 'No', 'Please', 'Sorry'];
-      const randomSign = mockSigns[Math.floor(Math.random() * mockSigns.length)];
-      const randomConfidence = 0.6 + Math.random() * 0.4; // 60-100%
-
-      setCurrentPrediction(randomSign);
-      setCurrentConfidence(randomConfidence);
-
-      // Auto-speak prediction after a short delay
-      const speakTimeout = setTimeout(() => {
-        speak(randomSign);
-      }, 500);
+    if (demoPrediction) {
+      // Speak the prediction
+      speak(demoPrediction.sign);
 
       // Add to transcript
-      const addToTranscript = setTimeout(() => {
-        const entry: TranscriptEntry = {
-          id: Date.now().toString(),
-          text: randomSign,
-          confidence: randomConfidence,
-          timestamp: new Date(),
-        };
-        setTranscriptEntries((prev) => [...prev, entry]);
-      }, 1000);
-
-      return () => {
-        clearTimeout(speakTimeout);
-        clearTimeout(addToTranscript);
+      const entry: TranscriptEntry = {
+        id: Date.now().toString(),
+        text: demoPrediction.sign,
+        confidence: demoPrediction.confidence,
+        timestamp: new Date(),
       };
-    } else {
-      setCurrentPrediction(null);
-      setCurrentConfidence(0);
+      setTranscriptEntries((prev) => [...prev, entry]);
     }
-  }, [detectedHands, isStreaming]);
+  }, [demoPrediction, speak]);
 
   const handleStart = useCallback(async () => {
     try {
@@ -96,13 +87,14 @@ const Index = () => {
 
   const handleStop = useCallback(() => {
     stopCamera();
-    setCurrentPrediction(null);
-    setCurrentConfidence(0);
+    if (isRecording) {
+      stopRecording();
+    }
     toast({
       title: 'Detection Stopped',
       description: 'Hand tracking has been stopped',
     });
-  }, [stopCamera, toast]);
+  }, [stopCamera, isRecording, stopRecording, toast]);
 
   const handleClearTranscript = useCallback(() => {
     setTranscriptEntries([]);
@@ -122,66 +114,109 @@ const Index = () => {
     }
   }, []);
 
-  return (
-    <div ref={containerRef} className="min-h-screen bg-background text-foreground p-4 md:p-6">
-      {/* Header */}
-      <header className="mb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="p-2 bg-primary/10 rounded-lg">
-            <Hand className="w-8 h-8 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-              Sign-to-Speech Interpreter
-            </h1>
-            <p className="text-muted-foreground">Real-time hand gesture recognition and translation</p>
-          </div>
-        </div>
-      </header>
+  const handleStartRecording = useCallback(async () => {
+    try {
+      await startRecording(videoRef.current, canvasElement);
+      toast({
+        title: 'Recording Started',
+        description: 'Session recording is now active',
+      });
+    } catch (error) {
+      toast({
+        title: 'Recording Error',
+        description: 'Failed to start recording',
+        variant: 'destructive',
+      });
+    }
+  }, [startRecording, videoRef, canvasElement, toast]);
 
-      {/* Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Camera View - Takes 2 columns on large screens */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="aspect-video">
-            <CameraView
-              videoRef={videoRef}
+  const handleStopRecording = useCallback(() => {
+    stopRecording();
+    toast({
+      title: 'Recording Stopped',
+      description: 'Session recording has been saved',
+    });
+  }, [stopRecording, toast]);
+
+  const handleDownloadRecording = useCallback(() => {
+    downloadRecording();
+    toast({
+      title: 'Download Started',
+      description: 'Your recording is being downloaded',
+    });
+  }, [downloadRecording, toast]);
+
+  return (
+    <>
+      <AnimatedBackground />
+      <div ref={containerRef} className="relative min-h-screen bg-background text-foreground p-4 md:p-6 z-10">
+        {/* Header */}
+        <header className="mb-6 animate-fade-in">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <Hand className="w-8 h-8 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+                Sign-to-Speech Interpreter
+              </h1>
+              <p className="text-muted-foreground">Real-time hand gesture recognition and translation</p>
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-scale-in">
+          {/* Camera View - Takes 2 columns on large screens */}
+          <div className="lg:col-span-2 space-y-4">
+            <div className="aspect-video">
+              <CameraView
+                videoRef={videoRef}
+                isStreaming={isStreaming}
+                onCanvasRef={setCanvasElement}
+              />
+            </div>
+
+            <ControlPanel
               isStreaming={isStreaming}
-              onCanvasRef={setCanvasElement}
+              isMuted={isMuted}
+              isRecording={isRecording}
+              hasRecording={hasRecording}
+              onStart={handleStart}
+              onStop={handleStop}
+              onToggleMute={toggleMute}
+              onFullscreen={handleFullscreen}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+              onStartRecording={handleStartRecording}
+              onStopRecording={handleStopRecording}
+              onDownloadRecording={handleDownloadRecording}
+            />
+
+            <PredictionCard 
+              prediction={demoPrediction?.sign || null} 
+              confidence={demoPrediction?.confidence || 0} 
             />
           </div>
 
-          <ControlPanel
-            isStreaming={isStreaming}
-            isMuted={isMuted}
-            onStart={handleStart}
-            onStop={handleStop}
-            onToggleMute={toggleMute}
-            onFullscreen={handleFullscreen}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-          />
-
-          <PredictionCard prediction={currentPrediction} confidence={currentConfidence} />
+          {/* Transcript Panel */}
+          <div className="h-[600px] lg:h-auto">
+            <TranscriptPanel entries={transcriptEntries} onClear={handleClearTranscript} />
+          </div>
         </div>
 
-        {/* Transcript Panel */}
-        <div className="h-[600px] lg:h-auto">
-          <TranscriptPanel entries={transcriptEntries} onClear={handleClearTranscript} />
-        </div>
+        {/* Settings Panel */}
+        <SettingsPanel
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          cameras={devices}
+          selectedCamera={selectedDevice}
+          onCameraChange={switchCamera}
+          voices={voices}
+          selectedVoice={selectedVoice}
+          onVoiceChange={changeVoice}
+        />
       </div>
-
-      {/* Settings Panel */}
-      <SettingsPanel
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        cameras={devices}
-        selectedCamera={selectedDevice}
-        onCameraChange={switchCamera}
-        voices={voices}
-        selectedVoice={selectedVoice}
-        onVoiceChange={changeVoice}
-      />
-    </div>
+    </>
   );
 };
 
