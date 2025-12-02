@@ -1,24 +1,34 @@
-import { Play, Square, Volume2, VolumeX, Maximize, Settings } from 'lucide-react';
+import { Play, Square, Volume2, VolumeX, Maximize, Settings, Video, Download } from 'lucide-react';
 import { Button } from './ui/button';
 
 interface ControlPanelProps {
   isStreaming: boolean;
   isMuted: boolean;
+  isRecording: boolean;
+  hasRecording: boolean;
   onStart: () => void;
   onStop: () => void;
   onToggleMute: () => void;
   onFullscreen: () => void;
   onOpenSettings: () => void;
+  onStartRecording: () => void;
+  onStopRecording: () => void;
+  onDownloadRecording: () => void;
 }
 
 export const ControlPanel = ({
   isStreaming,
   isMuted,
+  isRecording,
+  hasRecording,
   onStart,
   onStop,
   onToggleMute,
   onFullscreen,
   onOpenSettings,
+  onStartRecording,
+  onStopRecording,
+  onDownloadRecording,
 }: ControlPanelProps) => {
   return (
     <div className="flex items-center justify-center gap-3 p-4 bg-card/50 backdrop-blur-sm border border-border/50 rounded-lg">
@@ -70,6 +80,40 @@ export const ControlPanel = ({
       >
         <Settings className="w-5 h-5" />
       </Button>
+
+      <div className="w-px h-8 bg-border/50" />
+
+      {!isRecording ? (
+        <Button
+          onClick={onStartRecording}
+          variant="secondary"
+          size="icon"
+          disabled={!isStreaming}
+          className="relative"
+        >
+          <Video className="w-5 h-5" />
+        </Button>
+      ) : (
+        <Button
+          onClick={onStopRecording}
+          variant="destructive"
+          size="icon"
+          className="animate-pulse-glow"
+        >
+          <Square className="w-5 h-5 fill-current" />
+        </Button>
+      )}
+
+      {hasRecording && (
+        <Button
+          onClick={onDownloadRecording}
+          variant="secondary"
+          size="icon"
+          className="text-success hover:text-success/90"
+        >
+          <Download className="w-5 h-5" />
+        </Button>
+      )}
     </div>
   );
 };
