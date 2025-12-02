@@ -56,16 +56,18 @@ export const SettingsPanel = ({
                 <Camera className="w-5 h-5 text-primary" />
                 Camera Device
               </Label>
-              <Select value={selectedCamera} onValueChange={onCameraChange}>
+              <Select value={selectedCamera || undefined} onValueChange={onCameraChange}>
                 <SelectTrigger className="w-full bg-secondary border-border/50">
                   <SelectValue placeholder="Select camera" />
                 </SelectTrigger>
-                <SelectContent>
-                  {cameras.map((camera) => (
-                    <SelectItem key={camera.deviceId} value={camera.deviceId}>
-                      {camera.label}
-                    </SelectItem>
-                  ))}
+                <SelectContent className="bg-card border-border z-50">
+                  {cameras
+                    .filter((camera) => camera.deviceId && camera.deviceId.trim() !== '')
+                    .map((camera) => (
+                      <SelectItem key={camera.deviceId} value={camera.deviceId}>
+                        {camera.label}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
               <p className="text-sm text-muted-foreground">
@@ -81,18 +83,20 @@ export const SettingsPanel = ({
                 Text-to-Speech Voice
               </Label>
               <Select
-                value={selectedVoice?.voiceURI || ''}
+                value={selectedVoice?.voiceURI || undefined}
                 onValueChange={onVoiceChange}
               >
                 <SelectTrigger className="w-full bg-secondary border-border/50">
                   <SelectValue placeholder="Select voice" />
                 </SelectTrigger>
-                <SelectContent>
-                  {voices.map((voice) => (
-                    <SelectItem key={voice.voiceURI} value={voice.voiceURI}>
-                      {voice.name} ({voice.lang})
-                    </SelectItem>
-                  ))}
+                <SelectContent className="bg-card border-border z-50">
+                  {voices
+                    .filter((voice) => voice.voiceURI && voice.voiceURI.trim() !== '')
+                    .map((voice) => (
+                      <SelectItem key={voice.voiceURI} value={voice.voiceURI}>
+                        {voice.name} ({voice.lang})
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
               <p className="text-sm text-muted-foreground">
