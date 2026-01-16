@@ -1,0 +1,38 @@
+# Place your ONNX model file here
+# 
+# To convert your PyTorch model (sign_model_best.pth) to ONNX:
+#
+# 1. Install required packages:
+#    pip install torch onnx
+#
+# 2. Run this Python script:
+#
+# import torch
+# import torch.onnx
+# 
+# # Load your PyTorch model
+# model = YourModelClass()  # Replace with your model class
+# model.load_state_dict(torch.load('sign_model_best.pth'))
+# model.eval()
+# 
+# # Create dummy input matching your model's expected input
+# # For 21 hand landmarks with x, y, z coordinates:
+# dummy_input = torch.randn(1, 63)  # [batch_size, 21 * 3]
+# 
+# # Export to ONNX
+# torch.onnx.export(
+#     model,
+#     dummy_input,
+#     'sign_model_best.onnx',
+#     export_params=True,
+#     opset_version=11,
+#     do_constant_folding=True,
+#     input_names=['input'],
+#     output_names=['output'],
+#     dynamic_axes={
+#         'input': {0: 'batch_size'},
+#         'output': {0: 'batch_size'}
+#     }
+# )
+#
+# 3. Place the generated sign_model_best.onnx file in this folder
