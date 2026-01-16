@@ -4,11 +4,14 @@ import { useHandTracking } from '@/hooks/useHandTracking';
 import { useSpeech } from '@/hooks/useSpeech';
 import { useRecording } from '@/hooks/useRecording';
 import { useDemoModel } from '@/hooks/useDemoModel';
+import { useONNXModel } from '@/hooks/useONNXModel';
+import { useIPCamera } from '@/hooks/useIPCamera';
 import { CameraView } from '@/components/CameraView';
 import { PredictionCard } from '@/components/PredictionCard';
 import { TranscriptPanel, TranscriptEntry } from '@/components/TranscriptPanel';
 import { ControlPanel } from '@/components/ControlPanel';
 import { SettingsPanel } from '@/components/SettingsPanel';
+import { IPCameraModal } from '@/components/IPCameraModal';
 import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { Hand } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -45,29 +48,93 @@ const Index = () => {
     downloadRecording,
   } = useRecording();
 
+  // ONNX Model
+  const {
+    isModelLoaded,
+    isLoading: isModelLoading,
+    error: modelError,
+    loadModel,
+    predict,
+  } = useONNXModel();
+
+  // IP Camera
+  const {
+    isConnected: isIPCameraConnected,
+    isConnecting: isIPCameraConnecting,
+    error: ipCameraError,
+    connectIPCamera,
+    disconnectIPCamera,
+  } = useIPCamera();
+
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isIPCameraModalOpen, setIsIPCameraModalOpen] = useState(false);
+  const [useRealModel, setUseRealModel] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Use demo model for predictions
-  const demoPrediction = useDemoModel(isStreaming, detectedHands.length > 0);
+  // Use demo model for predictions (when not using real model)
+  const demoPrediction = useDemoModel(isStreaming && !useRealModel, detectedHands.length > 0);
+
+  // Real model prediction state
+  const [realPrediction, setRealPrediction] = useState<{ sign: string; confidence: number } | null>(null);
+
+  // Run real model inference when hands are detected
+  useEffect(() => {
+    if (!useRealModel || !isModelLoaded || !isStreaming || detectedHands.length === 0) {
+      setRealPrediction(null);
+      return;
+    }
+
+    const runInference = async () => {
+      // Get landmarks from first detected hand
+      const landmarks = detectedHands[0]?.landmarks;
+      if (landmarks && landmarks.length === 21) {
+        const result = await predict(landmarks);
+        if (result) {
+          setRealPrediction(result);
+        }
+      }
+    };
+
+    const interval = setInterval(runInference, 500); // Run inference every 500ms
+    return () => clearInterval(interval);
+  }, [useRealModel, isModelLoaded, isStreaming, detectedHands, predict]);
+
+  // Current prediction (demo or real)
+  const currentPrediction = useRealModel ? realPrediction : demoPrediction;
 
   // Auto-speak predictions and add to transcript
   useEffect(() => {
-    if (demoPrediction) {
+    if (currentPrediction) {
       // Speak the prediction
-      speak(demoPrediction.sign);
+      speak(currentPrediction.sign);
 
       // Add to transcript
       const entry: TranscriptEntry = {
         id: Date.now().toString(),
-        text: demoPrediction.sign,
-        confidence: demoPrediction.confidence,
+        text: currentPrediction.sign,
+        confidence: currentPrediction.confidence,
         timestamp: new Date(),
       };
       setTranscriptEntries((prev) => [...prev, entry]);
     }
-  }, [demoPrediction, speak]);
+  }, [currentPrediction, speak]);
+
+  const handleLoadModel = useCallback(async () => {
+    try {
+      await loadModel();
+      toast({
+        title: 'Model Loaded',
+        description: 'ONNX model is ready for inference',
+      });
+    } catch (error) {
+      toast({
+        title: 'Model Error',
+        description: 'Failed to load the ONNX model',
+        variant: 'destructive',
+      });
+    }
+  }, [loadModel, toast]);
 
   const handleStart = useCallback(async () => {
     try {
@@ -193,8 +260,8 @@ const Index = () => {
             />
 
             <PredictionCard 
-              prediction={demoPrediction?.sign || null} 
-              confidence={demoPrediction?.confidence || 0} 
+              prediction={currentPrediction?.sign || null} 
+              confidence={currentPrediction?.confidence || 0} 
             />
           </div>
 
@@ -214,6 +281,22 @@ const Index = () => {
           voices={voices}
           selectedVoice={selectedVoice}
           onVoiceChange={changeVoice}
+          onOpenIPCamera={() => setIsIPCameraModalOpen(true)}
+          isModelLoaded={isModelLoaded}
+          isModelLoading={isModelLoading}
+          modelError={modelError}
+          onLoadModel={handleLoadModel}
+          useRealModel={useRealModel}
+          onToggleModelMode={setUseRealModel}
+        />
+
+        {/* IP Camera Modal */}
+        <IPCameraModal
+          isOpen={isIPCameraModalOpen}
+          onClose={() => setIsIPCameraModalOpen(false)}
+          onConnect={connectIPCamera}
+          isConnecting={isIPCameraConnecting}
+          error={ipCameraError}
         />
       </div>
     </>
