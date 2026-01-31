@@ -29,13 +29,16 @@ export const useONNXModel = () => {
     setError(null);
 
     try {
-      // Configure ONNX Runtime
-      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/';
+      // Configure ONNX Runtime - use the installed version's WASM files
+      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
       
-      // Create inference session
+      // Disable multi-threading to avoid CORS issues
+      ort.env.wasm.numThreads = 1;
+      
+      // Create inference session with only WASM backend (more reliable in browsers)
       const session = await ort.InferenceSession.create(modelPath, {
-        executionProviders: ['webgl', 'wasm'],
-        graphOptimizationLevel: 'all',
+        executionProviders: ['wasm'],
+        graphOptimizationLevel: 'basic',
       });
 
       sessionRef.current = session;
