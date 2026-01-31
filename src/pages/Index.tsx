@@ -13,8 +13,10 @@ import { ControlPanel } from '@/components/ControlPanel';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { IPCameraModal } from '@/components/IPCameraModal';
 import { AnimatedBackground } from '@/components/AnimatedBackground';
-import { Hand } from 'lucide-react';
+import { VideoUploadPanel } from '@/components/VideoUploadPanel';
+import { Hand, Upload } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const Index = () => {
   const { toast } = useToast();
@@ -70,6 +72,7 @@ const Index = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isIPCameraModalOpen, setIsIPCameraModalOpen] = useState(false);
   const [useRealModel, setUseRealModel] = useState(false);
+  const [activeTab, setActiveTab] = useState('camera');
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Use demo model for predictions (when not using real model)
@@ -119,6 +122,18 @@ const Index = () => {
       setTranscriptEntries((prev) => [...prev, entry]);
     }
   }, [currentPrediction, speak]);
+
+  // Handler for video upload predictions
+  const handleVideoPrediction = useCallback((sign: string, confidence: number) => {
+    speak(sign);
+    const entry: TranscriptEntry = {
+      id: Date.now().toString(),
+      text: sign,
+      confidence: confidence,
+      timestamp: new Date(),
+    };
+    setTranscriptEntries((prev) => [...prev, entry]);
+  }, [speak]);
 
   const handleLoadModel = useCallback(async () => {
     try {
@@ -234,35 +249,63 @@ const Index = () => {
 
         {/* Main Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-scale-in">
-          {/* Camera View - Takes 2 columns on large screens */}
+          {/* Camera/Video View - Takes 2 columns on large screens */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="aspect-video">
-              <CameraView
-                videoRef={videoRef}
-                isStreaming={isStreaming}
-                onCanvasRef={setCanvasElement}
-              />
-            </div>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-4">
+                <TabsTrigger value="camera" className="flex items-center gap-2">
+                  <Hand className="w-4 h-4" />
+                  Live Camera
+                </TabsTrigger>
+                <TabsTrigger value="upload" className="flex items-center gap-2">
+                  <Upload className="w-4 h-4" />
+                  Upload Video
+                </TabsTrigger>
+              </TabsList>
 
-            <ControlPanel
-              isStreaming={isStreaming}
-              isMuted={isMuted}
-              isRecording={isRecording}
-              hasRecording={hasRecording}
-              onStart={handleStart}
-              onStop={handleStop}
-              onToggleMute={toggleMute}
-              onFullscreen={handleFullscreen}
-              onOpenSettings={() => setIsSettingsOpen(true)}
-              onStartRecording={handleStartRecording}
-              onStopRecording={handleStopRecording}
-              onDownloadRecording={handleDownloadRecording}
-            />
+              <TabsContent value="camera" className="space-y-4">
+                <div className="aspect-video">
+                  <CameraView
+                    videoRef={videoRef}
+                    isStreaming={isStreaming}
+                    onCanvasRef={setCanvasElement}
+                  />
+                </div>
 
-            <PredictionCard 
-              prediction={currentPrediction?.sign || null} 
-              confidence={currentPrediction?.confidence || 0} 
-            />
+                <ControlPanel
+                  isStreaming={isStreaming}
+                  isMuted={isMuted}
+                  isRecording={isRecording}
+                  hasRecording={hasRecording}
+                  onStart={handleStart}
+                  onStop={handleStop}
+                  onToggleMute={toggleMute}
+                  onFullscreen={handleFullscreen}
+                  onOpenSettings={() => setIsSettingsOpen(true)}
+                  onStartRecording={handleStartRecording}
+                  onStopRecording={handleStopRecording}
+                  onDownloadRecording={handleDownloadRecording}
+                />
+
+                <PredictionCard 
+                  prediction={currentPrediction?.sign || null} 
+                  confidence={currentPrediction?.confidence || 0} 
+                />
+              </TabsContent>
+
+              <TabsContent value="upload" className="space-y-4">
+                <VideoUploadPanel
+                  onPrediction={handleVideoPrediction}
+                  predict={predict}
+                  isModelLoaded={isModelLoaded}
+                />
+
+                <PredictionCard 
+                  prediction={currentPrediction?.sign || null} 
+                  confidence={currentPrediction?.confidence || 0} 
+                />
+              </TabsContent>
+            </Tabs>
           </div>
 
           {/* Transcript Panel */}
