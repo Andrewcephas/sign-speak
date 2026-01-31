@@ -7,27 +7,14 @@ export interface ModelPrediction {
 }
 
 // Sign labels - update these to match your model's output classes
+// Sign labels - these should match your model's output classes
+// Update this array to match the exact labels your model was trained on
 const SIGN_LABELS = [
-  'Hello',
-  'Thank You',
-  'Yes',
-  'No',
-  'Please',
-  'Sorry',
-  'Help',
-  'Good Morning',
-  'How Are You',
-  'Goodbye',
-  'I Love You',
-  'Nice to Meet You',
-  'What',
-  'Where',
-  'When',
-  'Why',
-  'Who',
-  'How',
-  'Good',
-  'Bad',
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
+  'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
+  'U', 'V', 'W', 'X', 'Y', 'Z',
+  'Hello', 'Thank You', 'Yes', 'No', 'Please',
+  'Sorry', 'Help', 'I Love You', 'Goodbye',
 ];
 
 export const useONNXModel = () => {
@@ -37,7 +24,7 @@ export const useONNXModel = () => {
   const sessionRef = useRef<ort.InferenceSession | null>(null);
 
   // Load the ONNX model
-  const loadModel = useCallback(async (modelPath: string = '/models/sign_model_best.onnx') => {
+  const loadModel = useCallback(async (modelPath: string = '/models/sign_language_model.onnx') => {
     setIsLoading(true);
     setError(null);
 
