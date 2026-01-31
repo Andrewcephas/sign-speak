@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import * as ort from 'onnxruntime-web';
+// Use WASM-only build to avoid WebGL/WebGPU backend negotiation issues.
+import * as ort from 'onnxruntime-web/wasm';
 
 export interface ModelPrediction {
   sign: string;
@@ -29,17 +30,49 @@ export const useONNXModel = () => {
     setError(null);
 
     try {
-      // Configure ONNX Runtime - use the installed version's WASM files
-      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
-      
-      // Disable multi-threading to avoid CORS issues
+      // IMPORTANT:
+      // Your preview environment can block remote *module* loads (dynamic import), which ORT uses for its runtime .mjs.
+      // So we serve the runtime .mjs from this app (/ort/...) and only fetch the .wasm binary from the CDN.
+      // This fixes: "no available backend found" + "Failed to fetch dynamically imported module ...ort-wasm-*.mjs".
+
+      const localBase = new URL('/ort/', window.location.href).toString();
+      const cdnBase = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/';
+
+      const runtimeCandidates: Array<{ mjs: string; wasm: string }> = [
+        {
+          mjs: `${localBase}ort-wasm-simd-threaded.jsep.mjs`,
+          wasm: `${cdnBase}ort-wasm-simd-threaded.jsep.wasm`,
+        },
+        {
+          mjs: `${localBase}ort-wasm-simd-threaded.mjs`,
+          wasm: `${cdnBase}ort-wasm-simd-threaded.wasm`,
+        },
+      ];
+
+      // Force single-threaded mode (no worker thread) for maximum compatibility.
       ort.env.wasm.numThreads = 1;
-      
-      // Create inference session with only WASM backend (more reliable in browsers)
-      const session = await ort.InferenceSession.create(modelPath, {
-        executionProviders: ['wasm'],
-        graphOptimizationLevel: 'basic',
-      });
+
+      // Ensure execution happens on main thread (default false, but we set explicitly).
+      ort.env.wasm.proxy = false;
+
+      let lastErr: unknown = null;
+      let session: ort.InferenceSession | null = null;
+      for (const candidate of runtimeCandidates) {
+        try {
+          ort.env.wasm.wasmPaths = candidate;
+          session = await ort.InferenceSession.create(modelPath, {
+            executionProviders: ['wasm'],
+            graphOptimizationLevel: 'basic',
+          });
+          break;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+
+      if (!session) {
+        throw lastErr instanceof Error ? lastErr : new Error('Failed to initialize ONNX Runtime WASM backend');
+      }
 
       sessionRef.current = session;
       setIsModelLoaded(true);
