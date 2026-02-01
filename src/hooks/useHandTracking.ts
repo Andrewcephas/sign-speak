@@ -1,11 +1,30 @@
 import { useRef, useEffect, useState } from 'react';
-import { Hands, Results } from '@mediapipe/hands';
-import { Camera } from '@mediapipe/camera_utils';
 
 export interface HandLandmarks {
   landmarks: Array<{ x: number; y: number; z: number }>;
   handedness: 'Left' | 'Right';
 }
+
+// Load MediaPipe scripts dynamically from CDN
+const loadScript = (src: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) {
+      resolve();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+};
+
+const loadMediaPipe = async () => {
+  await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js');
+  await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js');
+};
 
 export const useHandTracking = (
   videoElement: HTMLVideoElement | null,
@@ -13,80 +32,97 @@ export const useHandTracking = (
   isActive: boolean
 ) => {
   const [detectedHands, setDetectedHands] = useState<HandLandmarks[]>([]);
-  const handsRef = useRef<Hands | null>(null);
-  const cameraRef = useRef<Camera | null>(null);
+  const handsRef = useRef<any>(null);
+  const cameraRef = useRef<any>(null);
 
   useEffect(() => {
     if (!videoElement || !canvasElement || !isActive) {
       return;
     }
 
-    // Initialize MediaPipe Hands
-    const hands = new Hands({
-      locateFile: (file) => {
-        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-      },
-    });
+    let isMounted = true;
 
-    hands.setOptions({
-      maxNumHands: 2,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-    });
+    const initMediaPipe = async () => {
+      try {
+        await loadMediaPipe();
+        
+        if (!isMounted) return;
 
-    hands.onResults((results: Results) => {
-      const canvasCtx = canvasElement.getContext('2d');
-      if (!canvasCtx) return;
-
-      // Clear canvas
-      canvasCtx.save();
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-      // Draw hand landmarks
-      if (results.multiHandLandmarks && results.multiHandedness) {
-        const hands: HandLandmarks[] = [];
-
-        results.multiHandLandmarks.forEach((landmarks, idx) => {
-          const handedness = results.multiHandedness[idx].label as 'Left' | 'Right';
-          
-          hands.push({
-            landmarks: landmarks.map(l => ({ x: l.x, y: l.y, z: l.z })),
-            handedness,
-          });
-
-          // Draw connections
-          drawConnectors(canvasCtx, landmarks, canvasElement.width, canvasElement.height);
-          
-          // Draw landmarks
-          drawLandmarks(canvasCtx, landmarks, canvasElement.width, canvasElement.height, handedness);
+        const win = window as any;
+        
+        // Initialize MediaPipe Hands
+        const hands = new win.Hands({
+          locateFile: (file: string) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+          },
         });
 
-        setDetectedHands(hands);
-      } else {
-        setDetectedHands([]);
+        hands.setOptions({
+          maxNumHands: 2,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+        });
+
+        hands.onResults((results: any) => {
+          const canvasCtx = canvasElement.getContext('2d');
+          if (!canvasCtx) return;
+
+          // Clear canvas
+          canvasCtx.save();
+          canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+          // Draw hand landmarks
+          if (results.multiHandLandmarks && results.multiHandedness) {
+            const detectedHandsArr: HandLandmarks[] = [];
+
+            results.multiHandLandmarks.forEach((landmarks: any, idx: number) => {
+              const handedness = results.multiHandedness[idx].label as 'Left' | 'Right';
+              
+              detectedHandsArr.push({
+                landmarks: landmarks.map((l: any) => ({ x: l.x, y: l.y, z: l.z })),
+                handedness,
+              });
+
+              // Draw connections
+              drawConnectors(canvasCtx, landmarks, canvasElement.width, canvasElement.height);
+              
+              // Draw landmarks
+              drawLandmarks(canvasCtx, landmarks, canvasElement.width, canvasElement.height, handedness);
+            });
+
+            setDetectedHands(detectedHandsArr);
+          } else {
+            setDetectedHands([]);
+          }
+
+          canvasCtx.restore();
+        });
+
+        handsRef.current = hands;
+
+        // Initialize camera
+        const camera = new win.Camera(videoElement, {
+          onFrame: async () => {
+            if (handsRef.current) {
+              await handsRef.current.send({ image: videoElement });
+            }
+          },
+          width: 1280,
+          height: 720,
+        });
+
+        camera.start();
+        cameraRef.current = camera;
+      } catch (error) {
+        console.error('Failed to initialize MediaPipe:', error);
       }
+    };
 
-      canvasCtx.restore();
-    });
-
-    handsRef.current = hands;
-
-    // Initialize camera
-    const camera = new Camera(videoElement, {
-      onFrame: async () => {
-        if (handsRef.current) {
-          await handsRef.current.send({ image: videoElement });
-        }
-      },
-      width: 1280,
-      height: 720,
-    });
-
-    camera.start();
-    cameraRef.current = camera;
+    initMediaPipe();
 
     return () => {
+      isMounted = false;
       if (cameraRef.current) {
         cameraRef.current.stop();
       }
