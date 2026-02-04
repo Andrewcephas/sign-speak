@@ -20,6 +20,7 @@ export const useONNXModel = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sessionRef = useRef<ort.InferenceSession | null>(null);
+  const inputShapeRef = useRef<readonly number[] | null>(null);
 
   // Load the ONNX model
   const loadModel = useCallback(async (modelPath: string = '/models/sign_language_model.onnx') => {
@@ -28,16 +29,13 @@ export const useONNXModel = () => {
 
     try {
       // Configure ONNX Runtime for maximum compatibility
-      // Use single thread to avoid SharedArrayBuffer issues
       ort.env.wasm.numThreads = 1;
-      
-      // Disable SIMD for broader browser support
       ort.env.wasm.simd = true;
       
       // Use CDN for WASM files - matching the installed package version
-      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/';
+      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
 
-      console.log('ONNX Runtime configured, loading model...');
+      console.log('ONNX Runtime configured, loading model from:', modelPath);
 
       // Create inference session with WASM backend only
       const session = await ort.InferenceSession.create(modelPath, {
@@ -46,13 +44,25 @@ export const useONNXModel = () => {
       });
 
       sessionRef.current = session;
-      setIsModelLoaded(true);
+      
+      // Log model info for debugging
       console.log('ONNX Model loaded successfully');
       console.log('Input names:', session.inputNames);
       console.log('Output names:', session.outputNames);
+      
+      // Get input shape from model metadata
+      const inputMeta = session.inputNames[0];
+      const inputInfo = session.inputNames.length > 0 ? inputMeta : null;
+      console.log('Input metadata:', inputInfo);
+      
+      // Try to extract expected input shape
+      // For transformer models, often [batch, seq_len, features] or [batch, features]
+      inputShapeRef.current = null; // Will be determined dynamically
+      
+      setIsModelLoaded(true);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load model';
-      setError(errorMessage);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(`Failed to load model: ${errorMessage}`);
       console.error('Error loading ONNX model:', err);
     } finally {
       setIsLoading(false);
@@ -86,45 +96,95 @@ export const useONNXModel = () => {
       // Preprocess input
       const inputData = preprocessLandmarks(landmarks);
       
-      // Create input tensor - adjust shape based on your model
-      // Common shapes: [1, 63] for flattened landmarks or [1, 21, 3] for 2D
-      const inputTensor = new ort.Tensor('float32', inputData, [1, 63]);
-
-      // Get input name from the model
+      // Get the input name from the model
       const inputName = sessionRef.current.inputNames[0];
-      const feeds: Record<string, ort.Tensor> = { [inputName]: inputTensor };
-
-      // Run inference
-      const results = await sessionRef.current.run(feeds);
       
-      // Get output - adjust based on your model's output name
-      const outputName = sessionRef.current.outputNames[0];
-      const output = results[outputName];
-      const probabilities = output.data as Float32Array;
-
-      // Find the class with highest probability
-      let maxIndex = 0;
-      let maxProb = probabilities[0];
+      // Try different input shapes based on common model architectures
+      // Shape 1: [batch, seq_len, features] = [1, 21, 3] - For transformer/sequence models
+      // Shape 2: [batch, features] = [1, 63] - For MLP/dense models
       
-      for (let i = 1; i < probabilities.length; i++) {
-        if (probabilities[i] > maxProb) {
-          maxProb = probabilities[i];
-          maxIndex = i;
-        }
+      let inputTensor: ort.Tensor;
+      let feeds: Record<string, ort.Tensor>;
+      
+      // First try [1, 21, 3] for transformer models
+      try {
+        const reshapedData = new Float32Array(63);
+        landmarks.forEach((landmark, i) => {
+          reshapedData[i * 3] = landmark.x;
+          reshapedData[i * 3 + 1] = landmark.y;
+          reshapedData[i * 3 + 2] = landmark.z;
+        });
+        
+        inputTensor = new ort.Tensor('float32', reshapedData, [1, 21, 3]);
+        feeds = { [inputName]: inputTensor };
+        
+        const results = await sessionRef.current.run(feeds);
+        return processResults(results, sessionRef.current.outputNames[0]);
+      } catch (shapeError) {
+        console.log('Shape [1, 21, 3] failed, trying [1, 63]...');
       }
-
-      // Apply softmax if needed (if output is logits, not probabilities)
-      const confidence = Math.min(maxProb, 1.0);
-
-      return {
-        sign: SIGN_LABELS[maxIndex] || `Sign ${maxIndex}`,
-        confidence: confidence,
-      };
+      
+      // Try [1, 63] for flattened input
+      try {
+        inputTensor = new ort.Tensor('float32', inputData, [1, 63]);
+        feeds = { [inputName]: inputTensor };
+        
+        const results = await sessionRef.current.run(feeds);
+        return processResults(results, sessionRef.current.outputNames[0]);
+      } catch (shapeError2) {
+        console.log('Shape [1, 63] failed, trying [1, 1, 63]...');
+      }
+      
+      // Try [1, 1, 63] as sequence of one frame
+      try {
+        inputTensor = new ort.Tensor('float32', inputData, [1, 1, 63]);
+        feeds = { [inputName]: inputTensor };
+        
+        const results = await sessionRef.current.run(feeds);
+        return processResults(results, sessionRef.current.outputNames[0]);
+      } catch (shapeError3) {
+        console.error('All input shapes failed');
+        return null;
+      }
+      
     } catch (err) {
       console.error('Inference error:', err);
       return null;
     }
   }, [preprocessLandmarks]);
+
+  // Process model results
+  const processResults = (results: ort.InferenceSession.OnnxValueMapType, outputName: string): ModelPrediction | null => {
+    const output = results[outputName];
+    if (!output) return null;
+    
+    const probabilities = output.data as Float32Array;
+
+    // Find the class with highest probability
+    let maxIndex = 0;
+    let maxProb = probabilities[0];
+    
+    for (let i = 1; i < probabilities.length; i++) {
+      if (probabilities[i] > maxProb) {
+        maxProb = probabilities[i];
+        maxIndex = i;
+      }
+    }
+
+    // Apply softmax normalization if output seems like logits
+    let confidence = maxProb;
+    if (maxProb > 1 || maxProb < 0) {
+      // Output is logits, apply softmax
+      const expValues = Array.from(probabilities).map(v => Math.exp(v - maxProb));
+      const sumExp = expValues.reduce((a, b) => a + b, 0);
+      confidence = expValues[maxIndex] / sumExp;
+    }
+
+    return {
+      sign: SIGN_LABELS[maxIndex] || `Sign ${maxIndex}`,
+      confidence: Math.min(confidence, 1.0),
+    };
+  };
 
   // Cleanup on unmount
   useEffect(() => {
