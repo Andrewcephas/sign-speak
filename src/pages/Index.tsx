@@ -45,10 +45,18 @@ const Index = () => {
   const {
     isRecording,
     hasRecording,
+    isUploading,
     startRecording,
     stopRecording,
     downloadRecording,
+    uploadRecording,
+    fetchRecordings,
   } = useRecording();
+
+  // Fetch recordings on mount
+  useEffect(() => {
+    fetchRecordings();
+  }, [fetchRecordings]);
 
   // ONNX Model
   const {
@@ -228,6 +236,10 @@ const Index = () => {
     });
   }, [downloadRecording, toast]);
 
+  const handleUploadRecording = useCallback(async () => {
+    await uploadRecording();
+  }, [uploadRecording]);
+
   return (
     <>
       <AnimatedBackground />
@@ -277,6 +289,7 @@ const Index = () => {
                   isMuted={isMuted}
                   isRecording={isRecording}
                   hasRecording={hasRecording}
+                  isUploading={isUploading}
                   onStart={handleStart}
                   onStop={handleStop}
                   onToggleMute={toggleMute}
@@ -285,6 +298,7 @@ const Index = () => {
                   onStartRecording={handleStartRecording}
                   onStopRecording={handleStopRecording}
                   onDownloadRecording={handleDownloadRecording}
+                  onUploadRecording={handleUploadRecording}
                 />
 
                 <PredictionCard 
