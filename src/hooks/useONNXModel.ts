@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-// Use WASM-only build to avoid WebGL/WebGPU backend negotiation issues.
-import * as ort from 'onnxruntime-web/wasm';
+import * as ort from 'onnxruntime-web';
 
 export interface ModelPrediction {
   sign: string;
@@ -8,8 +7,6 @@ export interface ModelPrediction {
 }
 
 // Sign labels - update these to match your model's output classes
-// Sign labels - these should match your model's output classes
-// Update this array to match the exact labels your model was trained on
 const SIGN_LABELS = [
   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
   'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
@@ -30,49 +27,23 @@ export const useONNXModel = () => {
     setError(null);
 
     try {
-      // IMPORTANT:
-      // Your preview environment can block remote *module* loads (dynamic import), which ORT uses for its runtime .mjs.
-      // So we serve the runtime .mjs from this app (/ort/...) and only fetch the .wasm binary from the CDN.
-      // This fixes: "no available backend found" + "Failed to fetch dynamically imported module ...ort-wasm-*.mjs".
-
-      const localBase = new URL('/ort/', window.location.href).toString();
-      const cdnBase = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/';
-
-      const runtimeCandidates: Array<{ mjs: string; wasm: string }> = [
-        {
-          mjs: `${localBase}ort-wasm-simd-threaded.jsep.mjs`,
-          wasm: `${cdnBase}ort-wasm-simd-threaded.jsep.wasm`,
-        },
-        {
-          mjs: `${localBase}ort-wasm-simd-threaded.mjs`,
-          wasm: `${cdnBase}ort-wasm-simd-threaded.wasm`,
-        },
-      ];
-
-      // Force single-threaded mode (no worker thread) for maximum compatibility.
+      // Configure ONNX Runtime for maximum compatibility
+      // Use single thread to avoid SharedArrayBuffer issues
       ort.env.wasm.numThreads = 1;
+      
+      // Disable SIMD for broader browser support
+      ort.env.wasm.simd = true;
+      
+      // Use CDN for WASM files - matching the installed package version
+      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/';
 
-      // Ensure execution happens on main thread (default false, but we set explicitly).
-      ort.env.wasm.proxy = false;
+      console.log('ONNX Runtime configured, loading model...');
 
-      let lastErr: unknown = null;
-      let session: ort.InferenceSession | null = null;
-      for (const candidate of runtimeCandidates) {
-        try {
-          ort.env.wasm.wasmPaths = candidate;
-          session = await ort.InferenceSession.create(modelPath, {
-            executionProviders: ['wasm'],
-            graphOptimizationLevel: 'basic',
-          });
-          break;
-        } catch (e) {
-          lastErr = e;
-        }
-      }
-
-      if (!session) {
-        throw lastErr instanceof Error ? lastErr : new Error('Failed to initialize ONNX Runtime WASM backend');
-      }
+      // Create inference session with WASM backend only
+      const session = await ort.InferenceSession.create(modelPath, {
+        executionProviders: ['wasm'],
+        graphOptimizationLevel: 'basic',
+      });
 
       sessionRef.current = session;
       setIsModelLoaded(true);

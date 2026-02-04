@@ -1,4 +1,4 @@
-import { Play, Square, Volume2, VolumeX, Maximize, Settings, Video, Download } from 'lucide-react';
+import { Play, Square, Volume2, VolumeX, Maximize, Settings, Video, Download, CloudUpload, Loader2 } from 'lucide-react';
 import { Button } from './ui/button';
 
 interface ControlPanelProps {
@@ -6,6 +6,7 @@ interface ControlPanelProps {
   isMuted: boolean;
   isRecording: boolean;
   hasRecording: boolean;
+  isUploading?: boolean;
   onStart: () => void;
   onStop: () => void;
   onToggleMute: () => void;
@@ -14,6 +15,7 @@ interface ControlPanelProps {
   onStartRecording: () => void;
   onStopRecording: () => void;
   onDownloadRecording: () => void;
+  onUploadRecording?: () => void;
 }
 
 export const ControlPanel = ({
@@ -21,6 +23,7 @@ export const ControlPanel = ({
   isMuted,
   isRecording,
   hasRecording,
+  isUploading = false,
   onStart,
   onStop,
   onToggleMute,
@@ -29,6 +32,7 @@ export const ControlPanel = ({
   onStartRecording,
   onStopRecording,
   onDownloadRecording,
+  onUploadRecording,
 }: ControlPanelProps) => {
   return (
     <div className="flex items-center justify-center gap-3 p-4 bg-card/50 backdrop-blur-sm border border-border/50 rounded-lg">
@@ -105,14 +109,33 @@ export const ControlPanel = ({
       )}
 
       {hasRecording && (
-        <Button
-          onClick={onDownloadRecording}
-          variant="secondary"
-          size="icon"
-          className="text-success hover:text-success/90"
-        >
-          <Download className="w-5 h-5" />
-        </Button>
+        <>
+          <Button
+            onClick={onDownloadRecording}
+            variant="secondary"
+            size="icon"
+            title="Download locally"
+          >
+            <Download className="w-5 h-5" />
+          </Button>
+          
+          {onUploadRecording && (
+            <Button
+              onClick={onUploadRecording}
+              variant="secondary"
+              size="icon"
+              disabled={isUploading}
+              className="text-primary hover:text-primary/90"
+              title="Save to cloud"
+            >
+              {isUploading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <CloudUpload className="w-5 h-5" />
+              )}
+            </Button>
+          )}
+        </>
       )}
     </div>
   );
