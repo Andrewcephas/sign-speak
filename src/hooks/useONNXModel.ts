@@ -32,15 +32,15 @@ export const useONNXModel = () => {
       ort.env.wasm.numThreads = 1;
       ort.env.wasm.simd = true;
       
-      // Use CDN for WASM files - matching the installed package version
-      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+       // Use CDN for WASM files - matching the installed package version (1.23.2)
+       ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/';
 
       console.log('ONNX Runtime configured, loading model from:', modelPath);
 
       // Create inference session with WASM backend only
       const session = await ort.InferenceSession.create(modelPath, {
         executionProviders: ['wasm'],
-        graphOptimizationLevel: 'basic',
+         graphOptimizationLevel: 'disabled',
       });
 
       sessionRef.current = session;
@@ -63,7 +63,7 @@ export const useONNXModel = () => {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(`Failed to load model: ${errorMessage}`);
-      console.error('Error loading ONNX model:', err);
+       console.error('Error loading ONNX model:', errorMessage);
     } finally {
       setIsLoading(false);
     }
