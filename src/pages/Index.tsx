@@ -151,9 +151,10 @@ const Index = () => {
         description: 'ONNX model is ready for inference',
       });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       toast({
         title: 'Model Error',
-        description: 'Failed to load the ONNX model',
+        description: message || 'Failed to load the ONNX model',
         variant: 'destructive',
       });
     }

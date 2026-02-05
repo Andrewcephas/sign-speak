@@ -160,7 +160,7 @@ export const SettingsPanel = ({
                   )}
                   
                   <p className="text-xs text-muted-foreground">
-                    Place your <code className="bg-secondary px-1 rounded">sign_model_best.onnx</code> file in the <code className="bg-secondary px-1 rounded">public/models/</code> folder
+                     Place <code className="bg-secondary px-1 rounded">sign_language_model.onnx</code> (and if exported with external weights also <code className="bg-secondary px-1 rounded">sign_language_model.onnx.data</code>) in <code className="bg-secondary px-1 rounded">public/models/</code>
                   </p>
                 </div>
               )}
@@ -200,16 +200,17 @@ export const SettingsPanel = ({
             <div className="p-4 bg-info/10 border border-info/30 rounded-lg">
               <h3 className="font-semibold text-foreground mb-2">PyTorch → ONNX Conversion</h3>
               <p className="text-sm text-muted-foreground mb-2">
-                Convert your <code className="bg-secondary px-1 rounded">sign_model_best.pth</code> to ONNX format:
+                 Convert your <code className="bg-secondary px-1 rounded">sign_language_model.pth</code> to ONNX format:
               </p>
               <pre className="text-xs bg-background p-2 rounded overflow-x-auto">
 {`import torch
 model.load_state_dict(
-  torch.load('sign_model_best.pth')
+  torch.load('sign_language_model.pth')
 )
 torch.onnx.export(
   model, dummy_input,
-  'sign_model_best.onnx'
+  'sign_language_model.onnx',
+  external_data=False
 )`}
               </pre>
             </div>
