@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+ import { useState, useCallback } from 'react';
 
 export interface IPCameraConfig {
   url: string;
@@ -10,7 +10,6 @@ export const useIPCamera = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const imgRef = useRef<HTMLImageElement | null>(null);
 
   // Connect to IP camera stream (MJPEG or similar)
   const connectIPCamera = useCallback(async (url: string): Promise<boolean> => {
@@ -102,6 +101,5 @@ export const useIPCamera = () => {
     connectIPCamera,
     disconnectIPCamera,
     getIPCameraHelp,
-    imgRef,
   };
 };
