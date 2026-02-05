@@ -22,6 +22,25 @@ export const useONNXModel = () => {
   const sessionRef = useRef<ort.InferenceSession | null>(null);
   const inputShapeRef = useRef<readonly number[] | null>(null);
 
+  const buildExternalDataConfig = useCallback((modelPath: string) => {
+    // Common convention when using ONNX external data: model file is `X.onnx` and data file is `X.onnx.data`.
+    const modelFileName = modelPath.split('/').pop() || 'model.onnx';
+    const externalDataFileName = `${modelFileName}.data`; // => sign_language_model.onnx.data
+    const externalDataUrl = `${modelPath}.data`; // => /models/sign_language_model.onnx.data
+
+    // NOTE: Some exporters store the external data path with or without "./". Provide both.
+    return {
+      externalDataUrl,
+      externalData: [
+        { path: externalDataFileName, data: externalDataUrl },
+        { path: `./${externalDataFileName}`, data: externalDataUrl },
+      ],
+    };
+  }, []);
+
+  const isExternalDataError = (message: string) =>
+    /external data file/i.test(message) || /MountedFiles/i.test(message);
+
   // Load the ONNX model
   const loadModel = useCallback(async (modelPath: string = '/models/sign_language_model.onnx') => {
     setIsLoading(true);
@@ -37,11 +56,48 @@ export const useONNXModel = () => {
 
       console.log('ONNX Runtime configured, loading model from:', modelPath);
 
-      // Create inference session with WASM backend only
-      const session = await ort.InferenceSession.create(modelPath, {
-        executionProviders: ['wasm'],
-         graphOptimizationLevel: 'disabled',
-      });
+       // Create inference session with WASM backend only.
+       // IMPORTANT: onnxruntime-web does NOT reliably auto-load external data (.onnx.data) from URL.
+       // If the model was exported with external weights, we must pass `externalData` explicitly.
+       let session: ort.InferenceSession;
+       try {
+         session = await ort.InferenceSession.create(modelPath, {
+           executionProviders: ['wasm'],
+           graphOptimizationLevel: 'disabled',
+         });
+       } catch (e) {
+         const msg = e instanceof Error ? e.message : String(e);
+         if (!isExternalDataError(msg)) {
+           throw e;
+         }
+
+         const { externalData, externalDataUrl } = buildExternalDataConfig(modelPath);
+
+         // Best-effort sanity check (non-fatal except for definitive 404/403).
+         try {
+           const head = await fetch(externalDataUrl, { method: 'HEAD' });
+           if (head.status === 404 || head.status === 403) {
+             throw new Error(`External weights file is not reachable (HTTP ${head.status}) at ${externalDataUrl}`);
+           }
+         } catch (fetchErr) {
+           const fetchMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+           if (/HTTP\s*404|HTTP\s*403/.test(fetchMsg)) {
+             throw new Error(
+               `Model requires external weights, but the weights file is missing or blocked: ${fetchMsg}. ` +
+                 `Ensure "/public/models/${modelPath.split('/').pop()}.data" exists and is reachable at "${externalDataUrl}".`,
+             );
+           }
+           console.warn('Could not verify external weights via HEAD; continuing anyway:', fetchErr);
+         }
+
+         // Retry with externalData explicitly provided.
+         // (The API supports this option even though older type defs may not include it.)
+         session = await ort.InferenceSession.create(modelPath, {
+           executionProviders: ['wasm'],
+           graphOptimizationLevel: 'disabled',
+           externalData,
+         } as any);
+       }
 
       sessionRef.current = session;
       
@@ -64,10 +120,14 @@ export const useONNXModel = () => {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(`Failed to load model: ${errorMessage}`);
        console.error('Error loading ONNX model:', errorMessage);
+      setIsModelLoaded(false);
+
+      // Let callers (UI) show an accurate toast instead of always reporting success.
+      throw err;
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [buildExternalDataConfig]);
 
   // Preprocess hand landmarks for model input
   const preprocessLandmarks = useCallback((landmarks: { x: number; y: number; z: number }[]): Float32Array => {
