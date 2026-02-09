@@ -33,9 +33,9 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
     getVideoElement,
   } = useVideoUpload();
 
-  // Hand tracking for uploaded video
+  // Hand tracking for uploaded video - only track when video is loaded and playing
   const { detectedHands } = useHandTracking(
-    videoElementRef.current,
+    videoUrl ? videoElementRef.current : null,
     canvasElement,
     isPlaying && !!videoUrl
   );

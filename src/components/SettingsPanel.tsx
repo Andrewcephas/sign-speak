@@ -11,6 +11,8 @@ import {
 import { Card } from './ui/card';
 import { CameraDevice } from '@/hooks/useCamera';
 
+export type ModelFormat = 'demo' | 'onnx' | 'tflite';
+
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -21,12 +23,19 @@ interface SettingsPanelProps {
   selectedVoice: SpeechSynthesisVoice | null;
   onVoiceChange: (voiceURI: string) => void;
   onOpenIPCamera: () => void;
-  isModelLoaded: boolean;
-  isModelLoading: boolean;
-  modelError: string | null;
-  onLoadModel: () => void;
-  useRealModel: boolean;
-  onToggleModelMode: (useReal: boolean) => void;
+  // ONNX model state
+  isOnnxModelLoaded: boolean;
+  isOnnxModelLoading: boolean;
+  onnxModelError: string | null;
+  onLoadOnnxModel: () => void;
+  // TFLite model state
+  isTfliteModelLoaded: boolean;
+  isTfliteModelLoading: boolean;
+  tfliteModelError: string | null;
+  onLoadTfliteModel: () => void;
+  // Model selection
+  selectedModelFormat: ModelFormat;
+  onModelFormatChange: (format: ModelFormat) => void;
 }
 
 export const SettingsPanel = ({
@@ -39,12 +48,16 @@ export const SettingsPanel = ({
   selectedVoice,
   onVoiceChange,
   onOpenIPCamera,
-  isModelLoaded,
-  isModelLoading,
-  modelError,
-  onLoadModel,
-  useRealModel,
-  onToggleModelMode,
+  isOnnxModelLoaded,
+  isOnnxModelLoading,
+  onnxModelError,
+  onLoadOnnxModel,
+  isTfliteModelLoaded,
+  isTfliteModelLoading,
+  tfliteModelError,
+  onLoadTfliteModel,
+  selectedModelFormat,
+  onModelFormatChange,
 }: SettingsPanelProps) => {
   if (!isOpen) return null;
 
@@ -109,40 +122,49 @@ export const SettingsPanel = ({
               
               <div className="flex gap-2">
                 <Button
-                  variant={!useRealModel ? "default" : "outline"}
+                  variant={selectedModelFormat === 'demo' ? "default" : "outline"}
                   size="sm"
-                  onClick={() => onToggleModelMode(false)}
+                  onClick={() => onModelFormatChange('demo')}
                   className="flex-1"
                 >
-                  Demo Mode
+                  Demo
                 </Button>
                 <Button
-                  variant={useRealModel ? "default" : "outline"}
+                  variant={selectedModelFormat === 'onnx' ? "default" : "outline"}
                   size="sm"
-                  onClick={() => onToggleModelMode(true)}
+                  onClick={() => onModelFormatChange('onnx')}
                   className="flex-1"
                 >
-                  Real Model
+                  ONNX
+                </Button>
+                <Button
+                  variant={selectedModelFormat === 'tflite' ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => onModelFormatChange('tflite')}
+                  className="flex-1"
+                >
+                  TFLite
                 </Button>
               </div>
 
-              {useRealModel && (
-                <div className="space-y-2">
+              {/* ONNX Model Controls */}
+              {selectedModelFormat === 'onnx' && (
+                <div className="space-y-2 p-3 bg-secondary/30 rounded-lg">
                   <Button
                     variant="outline"
                     className="w-full border-primary/50 hover:bg-primary/10"
-                    onClick={onLoadModel}
-                    disabled={isModelLoading || isModelLoaded}
+                    onClick={onLoadOnnxModel}
+                    disabled={isOnnxModelLoading || isOnnxModelLoaded}
                   >
-                    {isModelLoading ? (
+                    {isOnnxModelLoading ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Loading Model...
+                        Loading ONNX...
                       </>
-                    ) : isModelLoaded ? (
+                    ) : isOnnxModelLoaded ? (
                       <>
                         <CheckCircle className="w-4 h-4 mr-2 text-success" />
-                        Model Loaded
+                        ONNX Model Loaded
                       </>
                     ) : (
                       <>
@@ -152,17 +174,63 @@ export const SettingsPanel = ({
                     )}
                   </Button>
                   
-                  {modelError && (
-                    <div className="flex items-center gap-2 text-sm text-destructive">
-                      <AlertCircle className="w-4 h-4" />
-                      {modelError}
+                  {onnxModelError && (
+                    <div className="flex items-start gap-2 text-sm text-destructive">
+                      <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <span className="break-words">{onnxModelError}</span>
                     </div>
                   )}
                   
                   <p className="text-xs text-muted-foreground">
-                     Place <code className="bg-secondary px-1 rounded">sign_language_model.onnx</code> (and if exported with external weights also <code className="bg-secondary px-1 rounded">sign_language_model.onnx.data</code>) in <code className="bg-secondary px-1 rounded">public/models/</code>
+                    Place <code className="bg-secondary px-1 rounded">sign_language_model.onnx</code> in <code className="bg-secondary px-1 rounded">public/models/</code>
                   </p>
                 </div>
+              )}
+
+              {/* TFLite Model Controls */}
+              {selectedModelFormat === 'tflite' && (
+                <div className="space-y-2 p-3 bg-secondary/30 rounded-lg">
+                  <Button
+                    variant="outline"
+                    className="w-full border-primary/50 hover:bg-primary/10"
+                    onClick={onLoadTfliteModel}
+                    disabled={isTfliteModelLoading || isTfliteModelLoaded}
+                  >
+                    {isTfliteModelLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Loading TFLite...
+                      </>
+                    ) : isTfliteModelLoaded ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 mr-2 text-success" />
+                        TFLite Model Loaded
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4 mr-2" />
+                        Load TFLite Model
+                      </>
+                    )}
+                  </Button>
+                  
+                  {tfliteModelError && (
+                    <div className="flex items-start gap-2 text-sm text-destructive">
+                      <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <span className="break-words">{tfliteModelError}</span>
+                    </div>
+                  )}
+                  
+                  <p className="text-xs text-muted-foreground">
+                    Place <code className="bg-secondary px-1 rounded">sign_pose_model.tflite</code> and <code className="bg-secondary px-1 rounded">id_to_class.json</code> in <code className="bg-secondary px-1 rounded">public/models/</code>
+                  </p>
+                </div>
+              )}
+
+              {selectedModelFormat === 'demo' && (
+                <p className="text-xs text-muted-foreground p-3 bg-secondary/30 rounded-lg">
+                  Demo mode simulates predictions without a real model. Use ONNX or TFLite for actual sign recognition.
+                </p>
               )}
             </div>
 
@@ -198,21 +266,14 @@ export const SettingsPanel = ({
             <div className="h-px bg-border/50" />
 
             <div className="p-4 bg-info/10 border border-info/30 rounded-lg">
-              <h3 className="font-semibold text-foreground mb-2">PyTorch → ONNX Conversion</h3>
+              <h3 className="font-semibold text-foreground mb-2">Model Files</h3>
               <p className="text-sm text-muted-foreground mb-2">
-                 Convert your <code className="bg-secondary px-1 rounded">sign_language_model.pth</code> to ONNX format:
+                Upload your model files to <code className="bg-secondary px-1 rounded">public/models/</code>:
               </p>
-              <pre className="text-xs bg-background p-2 rounded overflow-x-auto">
-{`import torch
-model.load_state_dict(
-  torch.load('sign_language_model.pth')
-)
-torch.onnx.export(
-  model, dummy_input,
-  'sign_language_model.onnx',
-  external_data=False
-)`}
-              </pre>
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li>• <strong>ONNX:</strong> sign_language_model.onnx (+ .data if external)</li>
+                <li>• <strong>TFLite:</strong> sign_pose_model.tflite + id_to_class.json</li>
+              </ul>
             </div>
           </div>
         </div>
