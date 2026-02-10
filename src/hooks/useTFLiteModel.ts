@@ -1,6 +1,4 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import * as tf from '@tensorflow/tfjs';
-import * as tflite from '@tensorflow/tfjs-tflite';
 
 export interface ModelPrediction {
   sign: string;
@@ -11,15 +9,39 @@ interface ClassMapping {
   [key: string]: string;
 }
 
+// Load TFLite runtime from CDN (avoids bundling massive WASM deps)
+const loadTFLiteRuntime = async (): Promise<void> => {
+  if ((window as any).__tfliteReady) return;
+
+  const loadScript = (src: string): Promise<void> =>
+    new Promise((resolve, reject) => {
+      if (document.querySelector(`script[src="${src}"]`)) {
+        resolve();
+        return;
+      }
+      const s = document.createElement('script');
+      s.src = src;
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+
+  // Load TensorFlow.js core + tflite from CDN
+  await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0/dist/tf.min.js');
+  await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/tf-tflite.min.js');
+
+  (window as any).__tfliteReady = true;
+};
+
 export const useTFLiteModel = () => {
   const [isModelLoaded, setIsModelLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [classMapping, setClassMapping] = useState<ClassMapping>({});
-  
-  const modelRef = useRef<tflite.TFLiteModel | null>(null);
 
-  // Load class mapping from id_to_class.json
+  const modelRef = useRef<any>(null);
+
   const loadClassMapping = useCallback(async (mappingPath: string = '/models/id_to_class.json') => {
     try {
       const response = await fetch(mappingPath);
@@ -36,7 +58,6 @@ export const useTFLiteModel = () => {
     }
   }, []);
 
-  // Load TFLite model
   const loadModel = useCallback(async (
     modelPath: string = '/models/sign_pose_model.tflite',
     mappingPath: string = '/models/id_to_class.json'
@@ -51,23 +72,31 @@ export const useTFLiteModel = () => {
         throw new Error(`TFLite model not found at ${modelPath}. Please upload sign_pose_model.tflite to public/models/`);
       }
 
-      console.log('Loading TFLite model from:', modelPath);
-      
-      // Set WASM path for TFLite
+      console.log('Loading TFLite runtime from CDN...');
+      await loadTFLiteRuntime();
+
+      const win = window as any;
+      const tflite = win.tflite;
+
+      if (!tflite || !tflite.loadTFLiteModel) {
+        throw new Error('TFLite runtime failed to load from CDN');
+      }
+
+      // Set WASM path
       tflite.setWasmPath('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/');
-      
-      // Load the TFLite model
+
+      console.log('Loading TFLite model from:', modelPath);
       const model = await tflite.loadTFLiteModel(modelPath);
       modelRef.current = model;
-      
+
       // Load class mapping
       const mapping = await loadClassMapping(mappingPath);
       setClassMapping(mapping);
-      
+
       console.log('TFLite model loaded successfully');
       console.log('Model inputs:', model.inputs);
       console.log('Model outputs:', model.outputs);
-      
+
       setIsModelLoaded(true);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -80,21 +109,6 @@ export const useTFLiteModel = () => {
     }
   }, [loadClassMapping]);
 
-  // Preprocess landmarks for model input
-  const preprocessLandmarks = useCallback((landmarks: { x: number; y: number; z: number }[]): Float32Array => {
-    // Flatten landmarks: 21 points * 3 coordinates = 63 features
-    const features = new Float32Array(63);
-    
-    landmarks.forEach((landmark, i) => {
-      features[i * 3] = landmark.x;
-      features[i * 3 + 1] = landmark.y;
-      features[i * 3 + 2] = landmark.z;
-    });
-
-    return features;
-  }, []);
-
-  // Run inference
   const predict = useCallback(async (
     landmarks: { x: number; y: number; z: number }[]
   ): Promise<ModelPrediction | null> => {
@@ -103,41 +117,45 @@ export const useTFLiteModel = () => {
     }
 
     try {
-      const inputData = preprocessLandmarks(landmarks);
-      
-      // Create input tensor - try different shapes
-      let outputTensor: tf.Tensor;
-      
+      const tf = (window as any).tf;
+      if (!tf) return null;
+
+      // Flatten landmarks: 21 points * 3 coordinates = 63 features
+      const features = new Float32Array(63);
+      landmarks.forEach((landmark, i) => {
+        features[i * 3] = landmark.x;
+        features[i * 3 + 1] = landmark.y;
+        features[i * 3 + 2] = landmark.z;
+      });
+
+      let outputTensor: any;
+
       try {
-        // Try [1, 63] shape first (flattened)
-        const inputTensor = tf.tensor2d(inputData, [1, 63]);
-        outputTensor = modelRef.current.predict(inputTensor) as tf.Tensor;
+        const inputTensor = tf.tensor2d(features, [1, 63]);
+        outputTensor = modelRef.current.predict(inputTensor);
         inputTensor.dispose();
       } catch {
         try {
-          // Try [1, 21, 3] shape (structured)
-          const inputTensor = tf.tensor3d(Array.from(inputData), [1, 21, 3]);
-          outputTensor = modelRef.current.predict(inputTensor) as tf.Tensor;
+          const inputTensor = tf.tensor3d(Array.from(features), [1, 21, 3]);
+          outputTensor = modelRef.current.predict(inputTensor);
           inputTensor.dispose();
         } catch {
-          // Try [1, 1, 63] shape
-          const inputTensor = tf.tensor3d(Array.from(inputData), [1, 1, 63]);
-          outputTensor = modelRef.current.predict(inputTensor) as tf.Tensor;
+          const inputTensor = tf.tensor3d(Array.from(features), [1, 1, 63]);
+          outputTensor = modelRef.current.predict(inputTensor);
           inputTensor.dispose();
         }
       }
 
-      const output = await outputTensor.data() as Float32Array;
+      const output = await outputTensor.data();
       outputTensor.dispose();
 
       if (!output || output.length === 0) {
         return null;
       }
 
-      // Find max probability
       let maxIndex = 0;
       let maxProb = output[0];
-      
+
       for (let i = 1; i < output.length; i++) {
         if (output[i] > maxProb) {
           maxProb = output[i];
@@ -145,15 +163,13 @@ export const useTFLiteModel = () => {
         }
       }
 
-      // Apply softmax if needed (output might be logits)
       let confidence = maxProb;
       if (maxProb > 1 || maxProb < 0) {
-        const expValues = Array.from(output).map(v => Math.exp(v - maxProb));
-        const sumExp = expValues.reduce((a, b) => a + b, 0);
+        const expValues = Array.from(output as Float32Array).map((v: number) => Math.exp(v - maxProb));
+        const sumExp = expValues.reduce((a: number, b: number) => a + b, 0);
         confidence = expValues[maxIndex] / sumExp;
       }
 
-      // Get label from mapping or use index
       const sign = classMapping[String(maxIndex)] || `Sign ${maxIndex}`;
 
       return {
@@ -164,9 +180,8 @@ export const useTFLiteModel = () => {
       console.error('TFLite inference error:', err);
       return null;
     }
-  }, [preprocessLandmarks, classMapping]);
+  }, [classMapping]);
 
-  // Cleanup - TFLite models don't have a dispose method
   useEffect(() => {
     return () => {
       modelRef.current = null;
