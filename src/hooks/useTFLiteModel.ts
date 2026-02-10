@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { loadLiteRt, loadAndCompile, Tensor, type CompiledModel } from '@litertjs/core';
 
 export interface ModelPrediction {
   sign: string;
@@ -9,48 +10,19 @@ interface ClassMapping {
   [key: string]: string;
 }
 
-// Use alpha.10 with proper WASM init to support newer model ops (CAST v5, etc.)
-const TFLITE_VERSION = '0.0.1-alpha.10';
-const TFJS_VERSION = '4.22.0';
-
-const loadScript = (src: string): Promise<void> =>
-  new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) {
-      resolve();
-      return;
-    }
-    const s = document.createElement('script');
-    s.src = src;
-    s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error(`Failed to load script: ${src}`));
-    document.head.appendChild(s);
-  });
-
+let runtimeLoaded = false;
 let runtimeLoading: Promise<void> | null = null;
 
-const loadTFLiteRuntime = (): Promise<void> => {
-  if ((window as any).tflite?.loadTFLiteModel) {
-    return Promise.resolve();
-  }
+const ensureRuntimeLoaded = (): Promise<void> => {
+  if (runtimeLoaded) return Promise.resolve();
   if (runtimeLoading) return runtimeLoading;
 
   runtimeLoading = (async () => {
-    // Load tfjs core first, then tflite (order matters)
-    await loadScript(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@${TFJS_VERSION}/dist/tf.min.js`);
-    
-    // Set WASM path BEFORE loading tflite to prevent _malloc errors
-    const win = window as any;
-    if (win.tflite?.setWasmPath) {
-      win.tflite.setWasmPath(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@${TFLITE_VERSION}/dist/`);
-    }
-    
-    await loadScript(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@${TFLITE_VERSION}/dist/tf-tflite.min.js`);
-
-    // Set WASM path again AFTER tflite script loaded (in case it wasn't available before)
-    if (win.tflite?.setWasmPath) {
-      win.tflite.setWasmPath(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@${TFLITE_VERSION}/dist/`);
-    }
+    console.log('Loading LiteRT.js WASM runtime from CDN...');
+    // Use jsDelivr CDN to serve the WASM files
+    await loadLiteRt('https://cdn.jsdelivr.net/npm/@litertjs/core@2.0.0/wasm/');
+    runtimeLoaded = true;
+    console.log('LiteRT.js runtime loaded successfully');
   })();
 
   return runtimeLoading;
@@ -62,7 +34,7 @@ export const useTFLiteModel = () => {
   const [error, setError] = useState<string | null>(null);
   const [classMapping, setClassMapping] = useState<ClassMapping>({});
 
-  const modelRef = useRef<any>(null);
+  const modelRef = useRef<CompiledModel | null>(null);
 
   const loadClassMapping = useCallback(async (mappingPath: string = '/models/id_to_class.json') => {
     try {
@@ -93,24 +65,21 @@ export const useTFLiteModel = () => {
         throw new Error(`TFLite model not found at ${modelPath}. Please upload sign_pose_model.tflite to public/models/`);
       }
 
-      console.log('Loading TFLite runtime from CDN (v' + TFLITE_VERSION + ')...');
-      await loadTFLiteRuntime();
-
-      const win = window as any;
-      if (!win.tflite?.loadTFLiteModel) {
-        throw new Error('TFLite runtime failed to initialize. Try refreshing the page.');
-      }
+      await ensureRuntimeLoaded();
 
       console.log('Loading TFLite model from:', modelPath);
-      const model = await win.tflite.loadTFLiteModel(modelPath);
+      const model = await loadAndCompile(modelPath, { accelerator: 'wasm' });
       modelRef.current = model;
 
       const mapping = await loadClassMapping(mappingPath);
       setClassMapping(mapping);
 
-      console.log('TFLite model loaded successfully');
-      console.log('Model inputs:', model.inputs);
-      console.log('Model outputs:', model.outputs);
+      // Log model info
+      const inputDetails = model.getInputDetails();
+      const outputDetails = model.getOutputDetails();
+      console.log('LiteRT model loaded successfully');
+      console.log('Inputs:', inputDetails.map(d => ({ name: d.name, shape: Array.from(d.shape), dtype: d.dtype })));
+      console.log('Outputs:', outputDetails.map(d => ({ name: d.name, shape: Array.from(d.shape), dtype: d.dtype })));
 
       setIsModelLoaded(true);
     } catch (err) {
@@ -132,9 +101,6 @@ export const useTFLiteModel = () => {
     }
 
     try {
-      const tf = (window as any).tf;
-      if (!tf) return null;
-
       const features = new Float32Array(63);
       landmarks.forEach((landmark, i) => {
         features[i * 3] = landmark.x;
@@ -142,26 +108,18 @@ export const useTFLiteModel = () => {
         features[i * 3 + 2] = landmark.z;
       });
 
-      let outputTensor: any;
+      // Determine correct input shape from model
+      const inputDetails = modelRef.current.getInputDetails();
+      const inputShape = inputDetails[0]?.shape ? Array.from(inputDetails[0].shape) : [1, 63];
+      console.log('Using input shape:', inputShape);
 
-      try {
-        const inputTensor = tf.tensor2d(features, [1, 63]);
-        outputTensor = modelRef.current.predict(inputTensor);
-        inputTensor.dispose();
-      } catch {
-        try {
-          const inputTensor = tf.tensor3d(Array.from(features), [1, 21, 3]);
-          outputTensor = modelRef.current.predict(inputTensor);
-          inputTensor.dispose();
-        } catch {
-          const inputTensor = tf.tensor3d(Array.from(features), [1, 1, 63]);
-          outputTensor = modelRef.current.predict(inputTensor);
-          inputTensor.dispose();
-        }
-      }
+      const inputTensor = new Tensor(features, inputShape);
+      const outputs = await modelRef.current.run(inputTensor);
+      inputTensor.delete();
 
-      const output = await outputTensor.data();
-      outputTensor.dispose();
+      const outputTensor = outputs[0];
+      const output = outputTensor.toTypedArray();
+      outputTensor.delete();
 
       if (!output || output.length === 0) return null;
 
@@ -174,6 +132,7 @@ export const useTFLiteModel = () => {
         }
       }
 
+      // Apply softmax if output isn't already probabilities
       let confidence = maxProb;
       if (maxProb > 1 || maxProb < 0) {
         const expValues = Array.from(output as Float32Array).map((v: number) => Math.exp(v - maxProb));
@@ -188,13 +147,16 @@ export const useTFLiteModel = () => {
         confidence: Math.min(confidence, 1.0),
       };
     } catch (err) {
-      console.error('TFLite inference error:', err);
+      console.error('LiteRT inference error:', err);
       return null;
     }
   }, [classMapping]);
 
   useEffect(() => {
     return () => {
+      if (modelRef.current && !modelRef.current.deleted) {
+        modelRef.current.delete();
+      }
       modelRef.current = null;
     };
   }, []);
