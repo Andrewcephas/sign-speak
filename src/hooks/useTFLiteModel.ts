@@ -9,29 +9,45 @@ interface ClassMapping {
   [key: string]: string;
 }
 
-// Load TFLite runtime from CDN (avoids bundling massive WASM deps)
-const loadTFLiteRuntime = async (): Promise<void> => {
-  if ((window as any).__tfliteReady) return;
+// Use alpha.9 which doesn't have the _malloc bug present in alpha.10
+const TFLITE_VERSION = '0.0.1-alpha.9';
+const TFJS_VERSION = '4.9.0';
 
-  const loadScript = (src: string): Promise<void> =>
-    new Promise((resolve, reject) => {
-      if (document.querySelector(`script[src="${src}"]`)) {
-        resolve();
-        return;
-      }
-      const s = document.createElement('script');
-      s.src = src;
-      s.async = true;
-      s.onload = () => resolve();
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
+const loadScript = (src: string): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) {
+      resolve();
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+    document.head.appendChild(s);
+  });
 
-  // Load TensorFlow.js core + tflite from CDN
-  await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0/dist/tf.min.js');
-  await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/tf-tflite.min.js');
+let runtimeLoading: Promise<void> | null = null;
 
-  (window as any).__tfliteReady = true;
+const loadTFLiteRuntime = (): Promise<void> => {
+  if ((window as any).tflite?.loadTFLiteModel) {
+    return Promise.resolve();
+  }
+  if (runtimeLoading) return runtimeLoading;
+
+  runtimeLoading = (async () => {
+    // Load tfjs core first, then tflite (order matters)
+    await loadScript(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@${TFJS_VERSION}/dist/tf.min.js`);
+    await loadScript(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@${TFLITE_VERSION}/dist/tf-tflite.min.js`);
+
+    // Set WASM path AFTER scripts are loaded
+    const win = window as any;
+    if (win.tflite?.setWasmPath) {
+      win.tflite.setWasmPath(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@${TFLITE_VERSION}/dist/`);
+    }
+  })();
+
+  return runtimeLoading;
 };
 
 export const useTFLiteModel = () => {
@@ -66,30 +82,23 @@ export const useTFLiteModel = () => {
     setError(null);
 
     try {
-      // Check if model file exists
       const modelCheck = await fetch(modelPath, { method: 'HEAD' });
       if (!modelCheck.ok) {
         throw new Error(`TFLite model not found at ${modelPath}. Please upload sign_pose_model.tflite to public/models/`);
       }
 
-      console.log('Loading TFLite runtime from CDN...');
+      console.log('Loading TFLite runtime from CDN (v' + TFLITE_VERSION + ')...');
       await loadTFLiteRuntime();
 
       const win = window as any;
-      const tflite = win.tflite;
-
-      if (!tflite || !tflite.loadTFLiteModel) {
-        throw new Error('TFLite runtime failed to load from CDN');
+      if (!win.tflite?.loadTFLiteModel) {
+        throw new Error('TFLite runtime failed to initialize. Try refreshing the page.');
       }
 
-      // Set WASM path
-      tflite.setWasmPath('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/');
-
       console.log('Loading TFLite model from:', modelPath);
-      const model = await tflite.loadTFLiteModel(modelPath);
+      const model = await win.tflite.loadTFLiteModel(modelPath);
       modelRef.current = model;
 
-      // Load class mapping
       const mapping = await loadClassMapping(mappingPath);
       setClassMapping(mapping);
 
@@ -120,7 +129,6 @@ export const useTFLiteModel = () => {
       const tf = (window as any).tf;
       if (!tf) return null;
 
-      // Flatten landmarks: 21 points * 3 coordinates = 63 features
       const features = new Float32Array(63);
       landmarks.forEach((landmark, i) => {
         features[i * 3] = landmark.x;
@@ -149,13 +157,10 @@ export const useTFLiteModel = () => {
       const output = await outputTensor.data();
       outputTensor.dispose();
 
-      if (!output || output.length === 0) {
-        return null;
-      }
+      if (!output || output.length === 0) return null;
 
       let maxIndex = 0;
       let maxProb = output[0];
-
       for (let i = 1; i < output.length; i++) {
         if (output[i] > maxProb) {
           maxProb = output[i];
