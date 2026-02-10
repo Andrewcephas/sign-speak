@@ -9,9 +9,9 @@ interface ClassMapping {
   [key: string]: string;
 }
 
-// Use alpha.9 which doesn't have the _malloc bug present in alpha.10
-const TFLITE_VERSION = '0.0.1-alpha.9';
-const TFJS_VERSION = '4.9.0';
+// Use alpha.10 with proper WASM init to support newer model ops (CAST v5, etc.)
+const TFLITE_VERSION = '0.0.1-alpha.10';
+const TFJS_VERSION = '4.22.0';
 
 const loadScript = (src: string): Promise<void> =>
   new Promise((resolve, reject) => {
@@ -38,10 +38,16 @@ const loadTFLiteRuntime = (): Promise<void> => {
   runtimeLoading = (async () => {
     // Load tfjs core first, then tflite (order matters)
     await loadScript(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@${TFJS_VERSION}/dist/tf.min.js`);
+    
+    // Set WASM path BEFORE loading tflite to prevent _malloc errors
+    const win = window as any;
+    if (win.tflite?.setWasmPath) {
+      win.tflite.setWasmPath(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@${TFLITE_VERSION}/dist/`);
+    }
+    
     await loadScript(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@${TFLITE_VERSION}/dist/tf-tflite.min.js`);
 
-    // Set WASM path AFTER scripts are loaded
-    const win = window as any;
+    // Set WASM path again AFTER tflite script loaded (in case it wasn't available before)
     if (win.tflite?.setWasmPath) {
       win.tflite.setWasmPath(`https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@${TFLITE_VERSION}/dist/`);
     }
