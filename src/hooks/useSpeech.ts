@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 export const useSpeech = () => {
   const [isMuted, setIsMuted] = useState(false);
@@ -6,6 +6,12 @@ export const useSpeech = () => {
   const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const isMutedRef = useRef(false);
+
+  // Keep refs in sync
+  useEffect(() => { selectedVoiceRef.current = selectedVoice; }, [selectedVoice]);
+  useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
   // Load available voices
   useEffect(() => {
@@ -13,7 +19,7 @@ export const useSpeech = () => {
       const availableVoices = window.speechSynthesis.getVoices();
       setVoices(availableVoices);
       
-      if (availableVoices.length > 0 && !selectedVoice) {
+      if (availableVoices.length > 0 && !selectedVoiceRef.current) {
         const defaultVoice = availableVoices.find(v => v.default) || availableVoices[0];
         setSelectedVoice(defaultVoice);
       }
@@ -27,16 +33,16 @@ export const useSpeech = () => {
   }, []);
 
   // Speak text
-  const speak = (text: string) => {
-    if (isMuted || !text) return;
+  const speak = useCallback((text: string) => {
+    if (isMutedRef.current || !text) return;
 
     // Cancel any ongoing speech
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
     
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
+    if (selectedVoiceRef.current) {
+      utterance.voice = selectedVoiceRef.current;
     }
     
     utterance.rate = 1;
@@ -49,31 +55,36 @@ export const useSpeech = () => {
 
     utteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
-  };
+  }, []);
 
   // Stop speaking
-  const stop = () => {
+  const stop = useCallback(() => {
     window.speechSynthesis.cancel();
     setIsSpeaking(false);
-  };
+  }, []);
 
   // Toggle mute
-  const toggleMute = () => {
-    const newMuted = !isMuted;
-    setIsMuted(newMuted);
-    
-    if (newMuted) {
-      stop();
-    }
-  };
+  const toggleMute = useCallback(() => {
+    setIsMuted(prev => {
+      const newMuted = !prev;
+      if (newMuted) {
+        window.speechSynthesis.cancel();
+        setIsSpeaking(false);
+      }
+      return newMuted;
+    });
+  }, []);
 
   // Change voice
-  const changeVoice = (voiceURI: string) => {
-    const voice = voices.find(v => v.voiceURI === voiceURI);
-    if (voice) {
-      setSelectedVoice(voice);
-    }
-  };
+  const changeVoice = useCallback((voiceURI: string) => {
+    setVoices(currentVoices => {
+      const voice = currentVoices.find(v => v.voiceURI === voiceURI);
+      if (voice) {
+        setSelectedVoice(voice);
+      }
+      return currentVoices;
+    });
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {

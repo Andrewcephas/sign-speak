@@ -87,6 +87,7 @@ const Index = () => {
   } = useIPCamera();
 
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
+  const lastPredictionRef = useRef<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isIPCameraModalOpen, setIsIPCameraModalOpen] = useState(false);
   const [selectedModelFormat, setSelectedModelFormat] = useState<ModelFormat>('demo');
@@ -139,7 +140,8 @@ const Index = () => {
 
   // Auto-speak predictions and add to transcript
   useEffect(() => {
-    if (currentPrediction) {
+    if (currentPrediction && currentPrediction.sign !== lastPredictionRef.current) {
+      lastPredictionRef.current = currentPrediction.sign;
       speak(currentPrediction.sign);
 
       const entry: TranscriptEntry = {
