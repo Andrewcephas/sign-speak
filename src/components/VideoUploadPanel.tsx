@@ -2,10 +2,9 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 import { Upload, Play, Pause, X, FileVideo, RotateCcw } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Progress } from './ui/progress';
 import { Slider } from './ui/slider';
 import { useVideoUpload } from '@/hooks/useVideoUpload';
-import { useHandTracking } from '@/hooks/useHandTracking';
+import { useVideoHandTracking } from '@/hooks/useVideoHandTracking';
 
 interface VideoUploadPanelProps {
   onPrediction: (sign: string, confidence: number) => void;
@@ -18,6 +17,7 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoElementRef = useRef<HTMLVideoElement>(null);
   const [canvasElement, setCanvasElement] = useState<HTMLCanvasElement | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
   
   const {
     videoUrl,
@@ -30,17 +30,16 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
     pauseVideo,
     seekVideo,
     clearVideo,
-    getVideoElement,
   } = useVideoUpload();
 
-  // Hand tracking for uploaded video - only track when video is loaded and playing
-  const { detectedHands } = useHandTracking(
-    videoUrl ? videoElementRef.current : null,
+  // Use the video-specific hand tracking (no MediaPipe Camera)
+  const { detectedHands } = useVideoHandTracking(
+    videoReady ? videoElementRef.current : null,
     canvasElement,
-    isPlaying && !!videoUrl
+    !!videoUrl
   );
 
-  // Run predictions when hands are detected
+  // Run predictions when hands are detected and video is playing
   useEffect(() => {
     if (!isPlaying || !isModelLoaded || detectedHands.length === 0) return;
 
@@ -48,7 +47,7 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
       const landmarks = detectedHands[0]?.landmarks;
       if (landmarks && landmarks.length === 21) {
         const result = await predict(landmarks);
-        if (result && result.confidence > 0.5) {
+        if (result && result.confidence > 0.3) {
           onPrediction(result.sign, result.confidence);
         }
       }
@@ -62,11 +61,14 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
     const file = event.target.files?.[0];
     if (file) {
       try {
+        setVideoReady(false);
         await uploadVideo(file);
       } catch (error) {
         console.error('Error uploading video:', error);
       }
     }
+    // Reset file input so user can re-upload same file
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }, [uploadVideo]);
 
   const handleDrop = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
@@ -74,6 +76,7 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
     const file = event.dataTransfer.files[0];
     if (file) {
       try {
+        setVideoReady(false);
         await uploadVideo(file);
       } catch (error) {
         console.error('Error uploading video:', error);
@@ -91,9 +94,26 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Wire up video element when URL changes
   useEffect(() => {
-    if (videoElementRef.current) {
-      setVideoRef(videoElementRef.current);
+    const video = videoElementRef.current;
+    if (video && videoUrl) {
+      setVideoRef(video);
+      
+      const onCanPlay = () => {
+        setVideoReady(true);
+        // Sync canvas size to video
+        if (canvasRef.current) {
+          canvasRef.current.width = video.videoWidth || 640;
+          canvasRef.current.height = video.videoHeight || 480;
+        }
+      };
+      
+      video.addEventListener('canplay', onCanPlay);
+      // If already ready
+      if (video.readyState >= 3) onCanPlay();
+      
+      return () => video.removeEventListener('canplay', onCanPlay);
     }
   }, [videoUrl, setVideoRef]);
 
@@ -102,6 +122,17 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
       setCanvasElement(canvasRef.current);
     }
   }, [videoUrl]);
+
+  const handleClear = useCallback(() => {
+    setVideoReady(false);
+    clearVideo();
+  }, [clearVideo]);
+
+  const handleRestart = useCallback(() => {
+    seekVideo(0);
+    // Small delay then play
+    setTimeout(() => playVideo(), 100);
+  }, [seekVideo, playVideo]);
 
   return (
     <Card className="bg-card/50 backdrop-blur-sm border-border/50">
@@ -143,6 +174,7 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
                 src={videoUrl}
                 className="w-full h-full object-contain"
                 playsInline
+                preload="auto"
               />
               <canvas
                 ref={canvasRef}
@@ -177,9 +209,10 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
             {/* Controls */}
             <div className="flex items-center justify-center gap-2">
               <Button
-                onClick={() => seekVideo(0)}
+                onClick={handleRestart}
                 variant="secondary"
                 size="icon"
+                title="Restart"
               >
                 <RotateCcw className="w-4 h-4" />
               </Button>
@@ -203,9 +236,10 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
               </Button>
               
               <Button
-                onClick={clearVideo}
+                onClick={handleClear}
                 variant="destructive"
                 size="icon"
+                title="Remove video"
               >
                 <X className="w-4 h-4" />
               </Button>
@@ -213,7 +247,7 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
 
             {!isModelLoaded && (
               <p className="text-sm text-amber-500 text-center">
-                ⚠️ Load the ONNX model in Settings to enable interpretation
+                ⚠️ Load a model in Settings to enable interpretation
               </p>
             )}
           </div>
