@@ -54,6 +54,7 @@ export const useVideoUpload = () => {
       
       video.onended = () => {
         setState(prev => ({ ...prev, isPlaying: false }));
+        // Don't clear video - allow replay
       };
     }
   }, []);

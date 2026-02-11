@@ -6,14 +6,27 @@ export interface ModelPrediction {
   confidence: number;
 }
 
-// Sign labels - update these to match your model's output classes
-const SIGN_LABELS = [
-  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
-  'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
-  'U', 'V', 'W', 'X', 'Y', 'Z',
-  'Hello', 'Thank You', 'Yes', 'No', 'Please',
-  'Sorry', 'Help', 'I Love You', 'Goodbye',
-];
+// Class labels loaded dynamically from id_to_class.json
+let SIGN_LABELS: Record<string, string> | null = null;
+let labelsLoadPromise: Promise<Record<string, string>> | null = null;
+
+const loadClassLabels = async (): Promise<Record<string, string>> => {
+  if (SIGN_LABELS) return SIGN_LABELS;
+  if (labelsLoadPromise) return labelsLoadPromise;
+  
+  labelsLoadPromise = fetch('/models/id_to_class.json')
+    .then(res => {
+      if (!res.ok) throw new Error(`Failed to load id_to_class.json: ${res.status}`);
+      return res.json();
+    })
+    .then((data: Record<string, string>) => {
+      SIGN_LABELS = data;
+      console.log(`Loaded ${Object.keys(data).length} class labels from id_to_class.json`);
+      return data;
+    });
+  
+  return labelsLoadPromise;
+};
 
 export const useONNXModel = () => {
   const [isModelLoaded, setIsModelLoaded] = useState(false);
@@ -54,6 +67,9 @@ export const useONNXModel = () => {
        // Use CDN for WASM files - matching the installed package version (1.23.2)
        ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/';
 
+      // Pre-load class labels
+      await loadClassLabels();
+      
       console.log('ONNX Runtime configured, loading model from:', modelPath);
 
        // Create inference session with WASM backend only.
@@ -240,8 +256,10 @@ export const useONNXModel = () => {
       confidence = expValues[maxIndex] / sumExp;
     }
 
+    const label = SIGN_LABELS ? (SIGN_LABELS[String(maxIndex)] || `Sign ${maxIndex}`) : `Sign ${maxIndex}`;
+    
     return {
-      sign: SIGN_LABELS[maxIndex] || `Sign ${maxIndex}`,
+      sign: label,
       confidence: Math.min(confidence, 1.0),
     };
   };
