@@ -114,18 +114,25 @@ const Index = () => {
   const isRealModelActive = (selectedModelFormat === 'onnx' && isOnnxModelLoaded) || 
                             (selectedModelFormat === 'tflite' && isTfliteModelLoaded);
 
+  // Keep a ref for detectedHands so the interval doesn't get recreated every frame
+  const detectedHandsRef = useRef(detectedHands);
+  useEffect(() => { detectedHandsRef.current = detectedHands; }, [detectedHands]);
+
   // Run real model inference when hands are detected
   useEffect(() => {
-    if (!isRealModelActive || !isStreaming || detectedHands.length === 0) {
+    if (!isRealModelActive || !isStreaming) {
       setRealPrediction(null);
       return;
     }
 
     const runInference = async () => {
-      const landmarks = detectedHands[0]?.landmarks;
+      const hands = detectedHandsRef.current;
+      if (hands.length === 0) return;
+      const landmarks = hands[0]?.landmarks;
       if (landmarks && landmarks.length === 21) {
         const result = await activePredict(landmarks);
         if (result) {
+          console.log('Prediction:', result.sign, result.confidence);
           setRealPrediction(result);
         }
       }
@@ -133,7 +140,7 @@ const Index = () => {
 
     const interval = setInterval(runInference, 500);
     return () => clearInterval(interval);
-  }, [isRealModelActive, isStreaming, detectedHands, activePredict]);
+  }, [isRealModelActive, isStreaming, activePredict]);
 
   // Current prediction (demo or real)
   const currentPrediction = selectedModelFormat === 'demo' ? demoPrediction : realPrediction;
