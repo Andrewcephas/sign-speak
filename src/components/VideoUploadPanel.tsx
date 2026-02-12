@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, useState } from 'react';
+import { useRef, useCallback, useEffect, useState, useMemo } from 'react';
 import { Upload, Play, Pause, X, FileVideo, RotateCcw } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -39,15 +39,22 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
     !!videoUrl
   );
 
+  // Keep a ref for detectedHands so the interval isn't recreated every frame
+  const detectedHandsRef = useRef(detectedHands);
+  useEffect(() => { detectedHandsRef.current = detectedHands; }, [detectedHands]);
+
   // Run predictions when hands are detected and video is playing
   useEffect(() => {
-    if (!isPlaying || !isModelLoaded || detectedHands.length === 0) return;
+    if (!isPlaying || !isModelLoaded) return;
 
     const runPrediction = async () => {
-      const landmarks = detectedHands[0]?.landmarks;
+      const hands = detectedHandsRef.current;
+      if (hands.length === 0) return;
+      const landmarks = hands[0]?.landmarks;
       if (landmarks && landmarks.length === 21) {
         const result = await predict(landmarks);
-        if (result && result.confidence > 0.3) {
+        if (result && result.confidence > 0.1) {
+          console.log('Video prediction:', result.sign, result.confidence);
           onPrediction(result.sign, result.confidence);
         }
       }
@@ -55,7 +62,7 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
 
     const interval = setInterval(runPrediction, 500);
     return () => clearInterval(interval);
-  }, [isPlaying, isModelLoaded, detectedHands, predict, onPrediction]);
+  }, [isPlaying, isModelLoaded, predict, onPrediction]);
 
   const handleFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
