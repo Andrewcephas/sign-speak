@@ -57,6 +57,31 @@ export const useSpeech = () => {
     window.speechSynthesis.speak(utterance);
   }, []);
 
+  // Speak text repeated N times (queued)
+  const speakRepeat = useCallback((text: string, times: number = 3) => {
+    if (isMutedRef.current || !text) return;
+
+    window.speechSynthesis.cancel();
+
+    for (let i = 0; i < times; i++) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      if (selectedVoiceRef.current) {
+        utterance.voice = selectedVoiceRef.current;
+      }
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+
+      if (i === 0) utterance.onstart = () => setIsSpeaking(true);
+      if (i === times - 1) {
+        utterance.onend = () => setIsSpeaking(false);
+        utterance.onerror = () => setIsSpeaking(false);
+      }
+
+      window.speechSynthesis.speak(utterance);
+    }
+  }, []);
+
   // Stop speaking
   const stop = useCallback(() => {
     window.speechSynthesis.cancel();
@@ -95,6 +120,7 @@ export const useSpeech = () => {
 
   return {
     speak,
+    speakRepeat,
     stop,
     toggleMute,
     changeVoice,

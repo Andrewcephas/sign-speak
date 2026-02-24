@@ -6,6 +6,7 @@ import { useRecording } from '@/hooks/useRecording';
 import { useDemoModel } from '@/hooks/useDemoModel';
 import { useONNXModel } from '@/hooks/useONNXModel';
 import { useTFLiteModel } from '@/hooks/useTFLiteModel';
+import { useTFJSModel } from '@/hooks/useTFJSModel';
 import { useIPCamera } from '@/hooks/useIPCamera';
 import { CameraView } from '@/components/CameraView';
 import { PredictionCard } from '@/components/PredictionCard';
@@ -33,6 +34,7 @@ const Index = () => {
 
   const {
     speak,
+    speakRepeat,
     toggleMute,
     changeVoice,
     isMuted,
@@ -77,6 +79,15 @@ const Index = () => {
     predict: predictTflite,
   } = useTFLiteModel();
 
+  // TF.js Model
+  const {
+    isModelLoaded: isTfjsModelLoaded,
+    isLoading: isTfjsModelLoading,
+    error: tfjsModelError,
+    loadModel: loadTfjsModel,
+    predict: predictTfjs,
+  } = useTFJSModel();
+
   // IP Camera
   const {
     isConnected: isIPCameraConnected,
@@ -106,13 +117,16 @@ const Index = () => {
       return predictOnnx(landmarks);
     } else if (selectedModelFormat === 'tflite' && isTfliteModelLoaded) {
       return predictTflite(landmarks);
+    } else if (selectedModelFormat === 'tfjs' && isTfjsModelLoaded) {
+      return predictTfjs(landmarks);
     }
     return null;
-  }, [selectedModelFormat, isOnnxModelLoaded, isTfliteModelLoaded, predictOnnx, predictTflite]);
+  }, [selectedModelFormat, isOnnxModelLoaded, isTfliteModelLoaded, isTfjsModelLoaded, predictOnnx, predictTflite, predictTfjs]);
 
   // Check if a real model is loaded and active
   const isRealModelActive = (selectedModelFormat === 'onnx' && isOnnxModelLoaded) || 
-                            (selectedModelFormat === 'tflite' && isTfliteModelLoaded);
+                            (selectedModelFormat === 'tflite' && isTfliteModelLoaded) ||
+                            (selectedModelFormat === 'tfjs' && isTfjsModelLoaded);
 
   // Keep a ref for detectedHands so the interval doesn't get recreated every frame
   const detectedHandsRef = useRef(detectedHands);
@@ -145,11 +159,11 @@ const Index = () => {
   // Current prediction (demo or real)
   const currentPrediction = selectedModelFormat === 'demo' ? demoPrediction : realPrediction;
 
-  // Auto-speak predictions and add to transcript
+  // Auto-speak predictions (3 times) and add to transcript
   useEffect(() => {
     if (currentPrediction && currentPrediction.sign !== lastPredictionRef.current) {
       lastPredictionRef.current = currentPrediction.sign;
-      speak(currentPrediction.sign);
+      speakRepeat(currentPrediction.sign, 3);
 
       const entry: TranscriptEntry = {
         id: Date.now().toString(),
@@ -159,11 +173,11 @@ const Index = () => {
       };
       setTranscriptEntries((prev) => [...prev, entry]);
     }
-  }, [currentPrediction, speak]);
+  }, [currentPrediction, speakRepeat]);
 
   // Handler for video upload predictions
   const handleVideoPrediction = useCallback((sign: string, confidence: number) => {
-    speak(sign);
+    speakRepeat(sign, 3);
     const entry: TranscriptEntry = {
       id: Date.now().toString(),
       text: sign,
@@ -171,7 +185,7 @@ const Index = () => {
       timestamp: new Date(),
     };
     setTranscriptEntries((prev) => [...prev, entry]);
-  }, [speak]);
+  }, [speakRepeat]);
 
   const handleLoadOnnxModel = useCallback(async () => {
     try {
@@ -206,6 +220,23 @@ const Index = () => {
       });
     }
   }, [loadTfliteModel, toast]);
+
+  const handleLoadTfjsModel = useCallback(async () => {
+    try {
+      await loadTfjsModel();
+      toast({
+        title: 'TF.js Model Loaded',
+        description: 'Model is ready for inference',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast({
+        title: 'TF.js Model Error',
+        description: message || 'Failed to load the model',
+        variant: 'destructive',
+      });
+    }
+  }, [loadTfjsModel, toast]);
 
   const handleStart = useCallback(async () => {
     try {
@@ -395,6 +426,10 @@ const Index = () => {
           isTfliteModelLoading={isTfliteModelLoading}
           tfliteModelError={tfliteModelError}
           onLoadTfliteModel={handleLoadTfliteModel}
+          isTfjsModelLoaded={isTfjsModelLoaded}
+          isTfjsModelLoading={isTfjsModelLoading}
+          tfjsModelError={tfjsModelError}
+          onLoadTfjsModel={handleLoadTfjsModel}
           selectedModelFormat={selectedModelFormat}
           onModelFormatChange={setSelectedModelFormat}
         />
