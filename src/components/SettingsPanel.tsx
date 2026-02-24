@@ -11,7 +11,7 @@ import {
 import { Card } from './ui/card';
 import { CameraDevice } from '@/hooks/useCamera';
 
-export type ModelFormat = 'demo' | 'onnx' | 'tflite';
+export type ModelFormat = 'demo' | 'onnx' | 'tflite' | 'tfjs';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -33,6 +33,11 @@ interface SettingsPanelProps {
   isTfliteModelLoading: boolean;
   tfliteModelError: string | null;
   onLoadTfliteModel: () => void;
+  // TF.js model state
+  isTfjsModelLoaded: boolean;
+  isTfjsModelLoading: boolean;
+  tfjsModelError: string | null;
+  onLoadTfjsModel: () => void;
   // Model selection
   selectedModelFormat: ModelFormat;
   onModelFormatChange: (format: ModelFormat) => void;
@@ -56,6 +61,10 @@ export const SettingsPanel = ({
   isTfliteModelLoading,
   tfliteModelError,
   onLoadTfliteModel,
+  isTfjsModelLoaded,
+  isTfjsModelLoading,
+  tfjsModelError,
+  onLoadTfjsModel,
   selectedModelFormat,
   onModelFormatChange,
 }: SettingsPanelProps) => {
@@ -145,6 +154,14 @@ export const SettingsPanel = ({
                 >
                   TFLite
                 </Button>
+                <Button
+                  variant={selectedModelFormat === 'tfjs' ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => onModelFormatChange('tfjs')}
+                  className="flex-1"
+                >
+                  TF.js
+                </Button>
               </div>
 
               {/* ONNX Model Controls */}
@@ -227,9 +244,49 @@ export const SettingsPanel = ({
                 </div>
               )}
 
+              {/* TF.js Model Controls */}
+              {selectedModelFormat === 'tfjs' && (
+                <div className="space-y-2 p-3 bg-secondary/30 rounded-lg">
+                  <Button
+                    variant="outline"
+                    className="w-full border-primary/50 hover:bg-primary/10"
+                    onClick={onLoadTfjsModel}
+                    disabled={isTfjsModelLoading || isTfjsModelLoaded}
+                  >
+                    {isTfjsModelLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Loading TF.js Model...
+                      </>
+                    ) : isTfjsModelLoaded ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 mr-2 text-success" />
+                        TF.js Model Loaded
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4 mr-2" />
+                        Load TF.js Model
+                      </>
+                    )}
+                  </Button>
+                  
+                  {tfjsModelError && (
+                    <div className="flex items-start gap-2 text-sm text-destructive">
+                      <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <span className="break-words">{tfjsModelError}</span>
+                    </div>
+                  )}
+                  
+                  <p className="text-xs text-muted-foreground">
+                    Place <code className="bg-secondary px-1 rounded">model.json</code> and <code className="bg-secondary px-1 rounded">group1-shard*.bin</code> files in <code className="bg-secondary px-1 rounded">public/models/</code>
+                  </p>
+                </div>
+              )}
+
               {selectedModelFormat === 'demo' && (
                 <p className="text-xs text-muted-foreground p-3 bg-secondary/30 rounded-lg">
-                  Demo mode simulates predictions without a real model. Use ONNX or TFLite for actual sign recognition.
+                  Demo mode simulates predictions without a real model. Use ONNX, TFLite, or TF.js for actual sign recognition.
                 </p>
               )}
             </div>
