@@ -8,15 +8,15 @@ export interface ModelPrediction {
 
 // The 43 sign phrases this model recognizes
 const SIGN_LABELS: string[] = [
-  "answer", "break", "change", "book", "agree",
-  "careful", "again", "attendance", "chat", "congratulations",
-  "home", "how are you", "happy birthday", "file", "email",
-  "hungry", "keepsmile", "good morning", "join", "i need help",
-  "meet", "practice", "mistake", "pass", "please",
-  "open", "opinion", "pressure", "problem", "questions",
-  "seat", "remember", "sick", "shift", "thirsty",
-  "sun", "together", "this", "stop", "team",
-  "where", "wait", "understand", "write",
+  "again", "agree", "answer", "attendance", "book",
+  "break", "careful", "change", "chat", "congratulations",
+  "email", "file", "good morning", "happy birthday", "home",
+  "how are you", "hungry", "i need help", "join", "keepsmile",
+  "meet", "mistake", "open", "opinion", "pass",
+  "please", "practice", "pressure", "problem", "questions",
+  "remember", "seat", "shift", "sick", "stop",
+  "sun", "team", "thirsty", "this", "together",
+  "understand", "wait", "where", "write",
 ];
 
 export const useTFJSModel = () => {
