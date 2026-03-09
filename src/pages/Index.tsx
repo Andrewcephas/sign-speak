@@ -63,7 +63,7 @@ const Index = () => {
     isLoading: isModelLoading,
     error: modelError,
     loadModel,
-    predict,
+    predictFromFrame,
   } = useTFJSModel();
 
   // IP Camera

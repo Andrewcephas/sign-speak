@@ -6,7 +6,7 @@ export interface ModelPrediction {
   confidence: number;
 }
 
-// The 43 sign phrases this model recognizes
+// The 44 sign phrases this model recognizes (must match training order)
 const SIGN_LABELS: string[] = [
   "again", "agree", "answer", "attendance", "book",
   "break", "careful", "change", "chat", "congratulations",
@@ -34,11 +34,9 @@ export const useTFJSModel = () => {
       const model = await tf.loadLayersModel(modelPath);
       modelRef.current = model;
 
-      // Log model info
       console.log('TF.js Model loaded successfully');
       model.summary();
-      const inputShape = model.inputs[0].shape;
-      console.log('Input shape:', inputShape);
+      console.log('Input shape:', model.inputs[0].shape);
       console.log('Output shape:', model.outputs[0].shape);
       console.log('Labels count:', SIGN_LABELS.length);
 
@@ -54,40 +52,30 @@ export const useTFJSModel = () => {
     }
   }, []);
 
-  const predict = useCallback(async (
-    landmarks: { x: number; y: number; z: number }[]
+  /**
+   * Predict from a video/canvas element by capturing a frame,
+   * resizing to 128x128, and running through the CNN.
+   */
+  const predictFromFrame = useCallback(async (
+    source: HTMLVideoElement | HTMLCanvasElement
   ): Promise<ModelPrediction | null> => {
-    if (!modelRef.current || landmarks.length !== 21) return null;
+    if (!modelRef.current) return null;
 
     try {
       const model = modelRef.current;
-      const inputShape = model.inputs[0].shape; // e.g. [null, 21, 3] or [null, 63]
 
-      let inputTensor: tf.Tensor;
-
-      // Flatten landmarks
-      const flat = new Float32Array(63);
-      landmarks.forEach((lm, i) => {
-        flat[i * 3] = lm.x;
-        flat[i * 3 + 1] = lm.y;
-        flat[i * 3 + 2] = lm.z;
+      // Capture frame, resize to 128x128, normalize to [0,1]
+      const inputTensor = tf.tidy(() => {
+        const frame = tf.browser.fromPixels(source);
+        const resized = tf.image.resizeBilinear(frame, [128, 128]);
+        const normalized = resized.div(255.0);
+        return normalized.expandDims(0); // [1, 128, 128, 3]
       });
-
-      // Try to match the model's expected input shape
-      if (inputShape.length === 3) {
-        // [batch, 21, 3]
-        inputTensor = tf.tensor3d([Array.from({ length: 21 }, (_, i) => [
-          landmarks[i].x, landmarks[i].y, landmarks[i].z
-        ])]);
-      } else {
-        // [batch, 63]
-        inputTensor = tf.tensor2d([Array.from(flat)]);
-      }
 
       const output = model.predict(inputTensor) as tf.Tensor;
       const probabilities = await output.data();
 
-      // Cleanup tensors
+      // Cleanup
       inputTensor.dispose();
       output.dispose();
 
@@ -101,7 +89,7 @@ export const useTFJSModel = () => {
         }
       }
 
-      // Apply softmax if logits
+      // Apply softmax if raw logits
       let confidence = maxProb;
       if (maxProb > 1 || maxProb < 0) {
         const shifted = Array.from(probabilities).map(v => Math.exp(v - maxProb));
@@ -129,5 +117,5 @@ export const useTFJSModel = () => {
     };
   }, []);
 
-  return { isModelLoaded, isLoading, error, loadModel, predict };
+  return { isModelLoaded, isLoading, error, loadModel, predictFromFrame };
 };
