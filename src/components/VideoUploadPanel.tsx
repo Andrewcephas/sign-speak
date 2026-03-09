@@ -8,11 +8,11 @@ import { useVideoHandTracking } from '@/hooks/useVideoHandTracking';
 
 interface VideoUploadPanelProps {
   onPrediction: (sign: string, confidence: number) => void;
-  predict: (landmarks: { x: number; y: number; z: number }[]) => Promise<{ sign: string; confidence: number } | null>;
+  predictFromFrame: (source: HTMLVideoElement | HTMLCanvasElement) => Promise<{ sign: string; confidence: number } | null>;
   isModelLoaded: boolean;
 }
 
-export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: VideoUploadPanelProps) => {
+export const VideoUploadPanel = ({ onPrediction, predictFromFrame, isModelLoaded }: VideoUploadPanelProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoElementRef = useRef<HTMLVideoElement>(null);
@@ -48,21 +48,18 @@ export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: Video
     if (!isPlaying || !isModelLoaded) return;
 
     const runPrediction = async () => {
-      const hands = detectedHandsRef.current;
-      if (hands.length === 0) return;
-      const landmarks = hands[0]?.landmarks;
-      if (landmarks && landmarks.length === 21) {
-        const result = await predict(landmarks);
-        if (result && result.confidence > 0.1) {
-          console.log('Video prediction:', result.sign, result.confidence);
-          onPrediction(result.sign, result.confidence);
-        }
+      const video = videoElementRef.current;
+      if (!video || video.readyState < 2) return;
+      const result = await predictFromFrame(video);
+      if (result && result.confidence > 0.1) {
+        console.log('Video prediction:', result.sign, result.confidence);
+        onPrediction(result.sign, result.confidence);
       }
     };
 
     const interval = setInterval(runPrediction, 500);
     return () => clearInterval(interval);
-  }, [isPlaying, isModelLoaded, predict, onPrediction]);
+  }, [isPlaying, isModelLoaded, predictFromFrame, onPrediction]);
 
   const handleFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
