@@ -48,21 +48,18 @@ export const VideoUploadPanel = ({ onPrediction, predictFromFrame, isModelLoaded
     if (!isPlaying || !isModelLoaded) return;
 
     const runPrediction = async () => {
-      const hands = detectedHandsRef.current;
-      if (hands.length === 0) return;
-      const landmarks = hands[0]?.landmarks;
-      if (landmarks && landmarks.length === 21) {
-        const result = await predict(landmarks);
-        if (result && result.confidence > 0.1) {
-          console.log('Video prediction:', result.sign, result.confidence);
-          onPrediction(result.sign, result.confidence);
-        }
+      const video = videoElementRef.current;
+      if (!video || video.readyState < 2) return;
+      const result = await predictFromFrame(video);
+      if (result && result.confidence > 0.1) {
+        console.log('Video prediction:', result.sign, result.confidence);
+        onPrediction(result.sign, result.confidence);
       }
     };
 
     const interval = setInterval(runPrediction, 500);
     return () => clearInterval(interval);
-  }, [isPlaying, isModelLoaded, predict, onPrediction]);
+  }, [isPlaying, isModelLoaded, predictFromFrame, onPrediction]);
 
   const handleFileSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
