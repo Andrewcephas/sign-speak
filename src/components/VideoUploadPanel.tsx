@@ -8,11 +8,11 @@ import { useVideoHandTracking } from '@/hooks/useVideoHandTracking';
 
 interface VideoUploadPanelProps {
   onPrediction: (sign: string, confidence: number) => void;
-  predict: (landmarks: { x: number; y: number; z: number }[]) => Promise<{ sign: string; confidence: number } | null>;
+  predictFromFrame: (source: HTMLVideoElement | HTMLCanvasElement) => Promise<{ sign: string; confidence: number } | null>;
   isModelLoaded: boolean;
 }
 
-export const VideoUploadPanel = ({ onPrediction, predict, isModelLoaded }: VideoUploadPanelProps) => {
+export const VideoUploadPanel = ({ onPrediction, predictFromFrame, isModelLoaded }: VideoUploadPanelProps) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoElementRef = useRef<HTMLVideoElement>(null);
