@@ -89,7 +89,7 @@ const Index = () => {
   const detectedHandsRef = useRef(detectedHands);
   useEffect(() => { detectedHandsRef.current = detectedHands; }, [detectedHands]);
 
-  // Run model inference when hands are detected
+  // Run model inference by capturing video frames
   useEffect(() => {
     if (!isModelLoaded || !isStreaming) {
       setRealPrediction(null);
@@ -97,21 +97,18 @@ const Index = () => {
     }
 
     const runInference = async () => {
-      const hands = detectedHandsRef.current;
-      if (hands.length === 0) return;
-      const landmarks = hands[0]?.landmarks;
-      if (landmarks && landmarks.length === 21) {
-        const result = await predict(landmarks);
-        if (result) {
-          console.log('Prediction:', result.sign, result.confidence);
-          setRealPrediction(result);
-        }
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) return;
+      const result = await predictFromFrame(video);
+      if (result) {
+        console.log('Prediction:', result.sign, result.confidence);
+        setRealPrediction(result);
       }
     };
 
     const interval = setInterval(runInference, 500);
     return () => clearInterval(interval);
-  }, [isModelLoaded, isStreaming, predict]);
+  }, [isModelLoaded, isStreaming, predictFromFrame]);
 
   const currentPrediction = realPrediction;
 
