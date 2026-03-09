@@ -307,7 +307,7 @@ const Index = () => {
               <TabsContent value="upload" className="space-y-4">
                 <VideoUploadPanel
                   onPrediction={handleVideoPrediction}
-                  predict={predict}
+                  predictFromFrame={predictFromFrame}
                   isModelLoaded={isModelLoaded}
                 />
 
