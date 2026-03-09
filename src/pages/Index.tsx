@@ -3,16 +3,13 @@ import { useCamera } from '@/hooks/useCamera';
 import { useHandTracking } from '@/hooks/useHandTracking';
 import { useSpeech } from '@/hooks/useSpeech';
 import { useRecording } from '@/hooks/useRecording';
-import { useDemoModel } from '@/hooks/useDemoModel';
-import { useONNXModel } from '@/hooks/useONNXModel';
-import { useTFLiteModel } from '@/hooks/useTFLiteModel';
 import { useTFJSModel } from '@/hooks/useTFJSModel';
 import { useIPCamera } from '@/hooks/useIPCamera';
 import { CameraView } from '@/components/CameraView';
 import { PredictionCard } from '@/components/PredictionCard';
 import { TranscriptPanel, TranscriptEntry } from '@/components/TranscriptPanel';
 import { ControlPanel } from '@/components/ControlPanel';
-import { SettingsPanel, ModelFormat } from '@/components/SettingsPanel';
+import { SettingsPanel } from '@/components/SettingsPanel';
 import { IPCameraModal } from '@/components/IPCameraModal';
 import { AnimatedBackground } from '@/components/AnimatedBackground';
 import { VideoUploadPanel } from '@/components/VideoUploadPanel';
@@ -56,36 +53,17 @@ const Index = () => {
     fetchRecordings,
   } = useRecording();
 
-  // Fetch recordings on mount
   useEffect(() => {
     fetchRecordings();
   }, [fetchRecordings]);
 
-  // ONNX Model
-  const {
-    isModelLoaded: isOnnxModelLoaded,
-    isLoading: isOnnxModelLoading,
-    error: onnxModelError,
-    loadModel: loadOnnxModel,
-    predict: predictOnnx,
-  } = useONNXModel();
-
-  // TFLite Model
-  const {
-    isModelLoaded: isTfliteModelLoaded,
-    isLoading: isTfliteModelLoading,
-    error: tfliteModelError,
-    loadModel: loadTfliteModel,
-    predict: predictTflite,
-  } = useTFLiteModel();
-
   // TF.js Model
   const {
-    isModelLoaded: isTfjsModelLoaded,
-    isLoading: isTfjsModelLoading,
-    error: tfjsModelError,
-    loadModel: loadTfjsModel,
-    predict: predictTfjs,
+    isModelLoaded,
+    isLoading: isModelLoading,
+    error: modelError,
+    loadModel,
+    predict,
   } = useTFJSModel();
 
   // IP Camera
@@ -101,40 +79,19 @@ const Index = () => {
   const lastPredictionRef = useRef<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isIPCameraModalOpen, setIsIPCameraModalOpen] = useState(false);
-  const [selectedModelFormat, setSelectedModelFormat] = useState<ModelFormat>('demo');
   const [activeTab, setActiveTab] = useState('camera');
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Use demo model for predictions (when in demo mode)
-  const demoPrediction = useDemoModel(isStreaming && selectedModelFormat === 'demo', detectedHands.length > 0);
-
   // Real model prediction state
   const [realPrediction, setRealPrediction] = useState<{ sign: string; confidence: number } | null>(null);
-
-  // Get the active predict function based on selected model
-  const activePredict = useCallback(async (landmarks: { x: number; y: number; z: number }[]) => {
-    if (selectedModelFormat === 'onnx' && isOnnxModelLoaded) {
-      return predictOnnx(landmarks);
-    } else if (selectedModelFormat === 'tflite' && isTfliteModelLoaded) {
-      return predictTflite(landmarks);
-    } else if (selectedModelFormat === 'tfjs' && isTfjsModelLoaded) {
-      return predictTfjs(landmarks);
-    }
-    return null;
-  }, [selectedModelFormat, isOnnxModelLoaded, isTfliteModelLoaded, isTfjsModelLoaded, predictOnnx, predictTflite, predictTfjs]);
-
-  // Check if a real model is loaded and active
-  const isRealModelActive = (selectedModelFormat === 'onnx' && isOnnxModelLoaded) || 
-                            (selectedModelFormat === 'tflite' && isTfliteModelLoaded) ||
-                            (selectedModelFormat === 'tfjs' && isTfjsModelLoaded);
 
   // Keep a ref for detectedHands so the interval doesn't get recreated every frame
   const detectedHandsRef = useRef(detectedHands);
   useEffect(() => { detectedHandsRef.current = detectedHands; }, [detectedHands]);
 
-  // Run real model inference when hands are detected
+  // Run model inference when hands are detected
   useEffect(() => {
-    if (!isRealModelActive || !isStreaming) {
+    if (!isModelLoaded || !isStreaming) {
       setRealPrediction(null);
       return;
     }
@@ -144,7 +101,7 @@ const Index = () => {
       if (hands.length === 0) return;
       const landmarks = hands[0]?.landmarks;
       if (landmarks && landmarks.length === 21) {
-        const result = await activePredict(landmarks);
+        const result = await predict(landmarks);
         if (result) {
           console.log('Prediction:', result.sign, result.confidence);
           setRealPrediction(result);
@@ -154,10 +111,9 @@ const Index = () => {
 
     const interval = setInterval(runInference, 500);
     return () => clearInterval(interval);
-  }, [isRealModelActive, isStreaming, activePredict]);
+  }, [isModelLoaded, isStreaming, predict]);
 
-  // Current prediction (demo or real)
-  const currentPrediction = selectedModelFormat === 'demo' ? demoPrediction : realPrediction;
+  const currentPrediction = realPrediction;
 
   // Auto-speak predictions (3 times) and add to transcript
   useEffect(() => {
@@ -187,56 +143,22 @@ const Index = () => {
     setTranscriptEntries((prev) => [...prev, entry]);
   }, [speakRepeat]);
 
-  const handleLoadOnnxModel = useCallback(async () => {
+  const handleLoadModel = useCallback(async () => {
     try {
-      await loadOnnxModel();
+      await loadModel();
       toast({
-        title: 'ONNX Model Loaded',
-        description: 'Model is ready for inference',
+        title: 'Model Loaded',
+        description: 'Sign language model is ready for inference',
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       toast({
-        title: 'ONNX Model Error',
+        title: 'Model Error',
         description: message || 'Failed to load the model',
         variant: 'destructive',
       });
     }
-  }, [loadOnnxModel, toast]);
-
-  const handleLoadTfliteModel = useCallback(async () => {
-    try {
-      await loadTfliteModel();
-      toast({
-        title: 'TFLite Model Loaded',
-        description: 'Model is ready for inference',
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      toast({
-        title: 'TFLite Model Error',
-        description: message || 'Failed to load the model',
-        variant: 'destructive',
-      });
-    }
-  }, [loadTfliteModel, toast]);
-
-  const handleLoadTfjsModel = useCallback(async () => {
-    try {
-      await loadTfjsModel();
-      toast({
-        title: 'TF.js Model Loaded',
-        description: 'Model is ready for inference',
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      toast({
-        title: 'TF.js Model Error',
-        description: message || 'Failed to load the model',
-        variant: 'destructive',
-      });
-    }
-  }, [loadTfjsModel, toast]);
+  }, [loadModel, toast]);
 
   const handleStart = useCallback(async () => {
     try {
@@ -340,7 +262,6 @@ const Index = () => {
 
         {/* Main Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-scale-in">
-          {/* Camera/Video View - Takes 2 columns on large screens */}
           <div className="lg:col-span-2 space-y-4">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-4">
@@ -389,8 +310,8 @@ const Index = () => {
               <TabsContent value="upload" className="space-y-4">
                 <VideoUploadPanel
                   onPrediction={handleVideoPrediction}
-                  predict={activePredict}
-                  isModelLoaded={isRealModelActive}
+                  predict={predict}
+                  isModelLoaded={isModelLoaded}
                 />
 
                 <PredictionCard 
@@ -401,7 +322,6 @@ const Index = () => {
             </Tabs>
           </div>
 
-          {/* Transcript Panel */}
           <div className="h-[600px] lg:h-auto">
             <TranscriptPanel entries={transcriptEntries} onClear={handleClearTranscript} />
           </div>
@@ -418,20 +338,10 @@ const Index = () => {
           selectedVoice={selectedVoice}
           onVoiceChange={changeVoice}
           onOpenIPCamera={() => setIsIPCameraModalOpen(true)}
-          isOnnxModelLoaded={isOnnxModelLoaded}
-          isOnnxModelLoading={isOnnxModelLoading}
-          onnxModelError={onnxModelError}
-          onLoadOnnxModel={handleLoadOnnxModel}
-          isTfliteModelLoaded={isTfliteModelLoaded}
-          isTfliteModelLoading={isTfliteModelLoading}
-          tfliteModelError={tfliteModelError}
-          onLoadTfliteModel={handleLoadTfliteModel}
-          isTfjsModelLoaded={isTfjsModelLoaded}
-          isTfjsModelLoading={isTfjsModelLoading}
-          tfjsModelError={tfjsModelError}
-          onLoadTfjsModel={handleLoadTfjsModel}
-          selectedModelFormat={selectedModelFormat}
-          onModelFormatChange={setSelectedModelFormat}
+          isModelLoaded={isModelLoaded}
+          isModelLoading={isModelLoading}
+          modelError={modelError}
+          onLoadModel={handleLoadModel}
         />
 
         {/* IP Camera Modal */}
